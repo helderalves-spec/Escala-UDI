@@ -225,6 +225,34 @@
       image-rendering: crisp-edges;
     }
 
+    /* ABAS DE TURNO (AM / PM) */
+    .turno-nav { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+    .turno-btn { flex: 1; min-width: 200px; background: #11131f; color: #94a3b8; border: 2px solid #262a40; padding: 10px 16px; border-radius: 8px; font-weight: 900; font-size: 14px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 2px; transition: all 0.2s; }
+    .turno-btn small { font-size: 10px; font-weight: 700; opacity: 0.85; }
+    .turno-btn.am.active { background: #b45309; border-color: #f59e0b; color: #fff; box-shadow: 0 0 12px rgba(245, 158, 11, 0.4); }
+    .turno-btn.pm.active { background: #4338ca; border-color: #818cf8; color: #fff; box-shadow: 0 0 12px rgba(129, 140, 248, 0.4); }
+
+    /* BARRA DA PLANILHA / SEMANA */
+    .planilha-bar { background: #181b29; border: 1px solid #334155; padding: 8px 12px; border-radius: 8px; margin-bottom: 15px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; font-size: 11px; font-weight: 700; }
+    .planilha-group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .semana-input { background: #11131f; border: 1px solid #334155; color: white; padding: 4px 6px; border-radius: 4px; font-size: 11px; color-scheme: dark; }
+    .link-input { background: #11131f; border: 1px solid #334155; color: white; padding: 4px 8px; border-radius: 4px; font-size: 11px; width: 260px; }
+    .status-erro { background: #450a0a; color: #fca5a5; border: 1px solid #ef4444; }
+    .status-neutro { background: #1e293b; color: #94a3b8; border: 1px solid #334155; }
+    .legenda-codigos { font-size: 10px; color: #94a3b8; font-weight: 600; width: 100%; }
+
+    /* DATAS E CONTAGEM NO CABEÇALHO DO DIA */
+    .day-date { opacity: 0.85; font-weight: 700; margin-left: 4px; }
+    .day-stats { font-size: 10px; font-weight: 800; background: rgba(0,0,0,0.3); padding: 3px 10px; border-radius: 10px; text-transform: none; }
+
+    /* CHIPS DE FOLGA / AUSENTE */
+    .chip-user.chip-folga { background: #3b2f13; border-color: #a16207; color: #fde68a; }
+    .chip-user.chip-ausente { background: #2a1717; border-color: #7f1d1d; color: #fca5a5; }
+    .folgas-title { font-size: 11px; font-weight: 800; color: #fbbf24; text-transform: uppercase; margin: 8px 0 6px 0; display: block; }
+
+    /* OPERADOR ESCALADO EM DIA DE FOLGA / AUSÊNCIA */
+    .slot select.conflito-folga { background-color: #450a0a !important; color: #fecaca !important; border: 2px dashed #ef4444 !important; font-weight: 900; }
+
     /* OCULTAR ELEMENTOS ADMIN QUANDO ESPECTADOR */
     body.is-viewer .admin-only { display: none !important; }
   </style>
@@ -252,7 +280,7 @@
 
   <!-- TOP BAR -->
   <div class="top-bar">
-    <h1>Gerenciador de Escalas Pro (Segunda a Domingo)</h1>
+    <h1>Gerenciador de Escalas Pro (Segunda a Domingo) - <span id="tituloTurno">AM</span></h1>
     <div class="action-buttons">
       <span id="storageStatus" class="status-badge status-saved">🟢 Armazenado Localmente</span>
       <button class="btn btn-outline-yellow admin-only" onclick="abrirModalSkills()">🎯 Skills / Competências</button>
@@ -275,6 +303,41 @@
         <button class="btn btn-blue-solid" onclick="entrarComoAdmin()">Entrar como Admin</button>
       </div>
       <button id="btnLogout" class="btn btn-outline-red" style="display: none;" onclick="sairParaEspectador()">Sair do Modo Admin</button>
+    </div>
+  </div>
+
+  <!-- ABAS DE TURNO: AM (LÍDER MARCELO) / PM (LÍDER HELDER) -->
+  <div class="turno-nav">
+    <button id="turnoBtnAM" class="turno-btn am active" onclick="trocarTurno('AM')">☀️ ESCALA AM <small>Líder: MARCELO</small></button>
+    <button id="turnoBtnPM" class="turno-btn pm" onclick="trocarTurno('PM')">🌙 ESCALA PM <small>Líder: HELDER</small></button>
+  </div>
+
+  <!-- SEMANA + PLANILHA DE FOLGAS -->
+  <div class="planilha-bar">
+    <div class="planilha-group">
+      <span>📅 Semana:</span>
+      <button class="btn btn-outline-blue btn-sm" onclick="mudarSemana(-1)">◀</button>
+      <input type="date" id="semanaInput" class="semana-input" onchange="definirSemana(this.value)">
+      <span id="semanaLabel" style="color:#60a5fa;"></span>
+      <button class="btn btn-outline-blue btn-sm" onclick="mudarSemana(1)">▶</button>
+      <button class="btn btn-outline-blue btn-sm" onclick="definirSemana(null)">Semana atual</button>
+    </div>
+    <div class="planilha-group">
+      <span id="planilhaStatus" class="status-badge status-neutro">⚪ Planilha não conectada</span>
+      <button class="btn btn-outline-yellow btn-sm" onclick="atualizarPlanilha(false)">🔄 Atualizar Folgas</button>
+    </div>
+    <div class="planilha-group admin-only">
+      <input type="text" id="linkPlanilhaInput" class="link-input" placeholder="Cole aqui o link CSV publicado da planilha">
+      <button class="btn btn-blue-solid btn-sm" onclick="salvarLinkPlanilha()">Salvar link</button>
+      <label class="btn btn-outline-purple btn-sm" style="cursor:pointer;">📂 Importar CSV
+        <input type="file" accept=".csv,text/csv" style="display:none;" onchange="importarCSVArquivo(this)">
+      </label>
+    </div>
+    <div class="legenda-codigos">
+      Legenda da planilha: <b style="color:#86efac;">em branco ou P = presença</b> ·
+      <b style="color:#fde68a;">DSR, FO, AM = folga</b> ·
+      <b style="color:#fca5a5;">outros códigos (F, FC, AL, FE, DV, DF, NC...) = ausente</b>.
+      Quem está de folga ou ausente não entra no sorteio e aparece bloqueado (🚫) nas listas daquele dia.
     </div>
   </div>
 
@@ -334,6 +397,8 @@
           </div>
         </div>
         <div class="unallocated-chips-container" id="listaNaoEscalados"></div>
+        <span class="folgas-title" id="countFolgas">🛌 FOLGA / AUSENTES</span>
+        <div class="unallocated-chips-container" id="listaFolgas"></div>
       </div>
     </div>
   </div>
@@ -488,12 +553,12 @@
       clearTimeout(timerAutoSave);
       timerAutoSave = setTimeout(async () => {
         try {
-          await salvarNoIndexedDB('colaboradores', window.colaboradores || []);
-          await salvarNoIndexedDB('skillsColaboradores', window.skillsColaboradores || {});
-          await salvarNoIndexedDB('escalaRecebimento', window.escalaRecebimento || {});
-          await salvarNoIndexedDB('escalaDoubleCheck', window.escalaDoubleCheck || {});
-          await salvarNoIndexedDB('letrasOperadores', window.letrasOperadores || {});
-          
+          if (window.salvarEstadoTurnoAtual) window.salvarEstadoTurnoAtual();
+          await salvarNoIndexedDB('dadosTurnos', window.dadosTurnos || {});
+          await salvarNoIndexedDB('turnoAtual', window.turnoAtual || 'AM');
+          await salvarNoIndexedDB('planilhaEscala', window.planilhaEscala || null);
+          await salvarNoIndexedDB('linkPlanilha', window.linkPlanilha || '');
+
           atualizarStatus("🟢 Armazenado Localmente", "status-saved");
         } catch (e) {
           console.error("Erro no salvamento IndexedDB: ", e);
@@ -504,23 +569,44 @@
 
     async function carregarDadosLocais() {
       try {
-        const colab = await carregarDoIndexedDB('colaboradores');
-        const sk = await carregarDoIndexedDB('skillsColaboradores');
-        const escRec = await carregarDoIndexedDB('escalaRecebimento');
-        const escDC = await carregarDoIndexedDB('escalaDoubleCheck');
-        const letras = await carregarDoIndexedDB('letrasOperadores');
+        const dadosTurnos = await carregarDoIndexedDB('dadosTurnos');
 
-        if (colab) window.colaboradores = colab;
-        if (sk) window.skillsColaboradores = sk;
-        if (escRec) window.escalaRecebimento = escRec;
-        if (escDC) window.escalaDoubleCheck = escDC;
-        if (letras) window.letrasOperadores = letras;
+        if (dadosTurnos) {
+          window.dadosTurnos = dadosTurnos;
+        } else {
+          // MIGRAÇÃO: dados da versão antiga (turno único) passam a ser a escala AM
+          const colab = await carregarDoIndexedDB('colaboradores');
+          const sk = await carregarDoIndexedDB('skillsColaboradores');
+          const escRec = await carregarDoIndexedDB('escalaRecebimento');
+          const escDC = await carregarDoIndexedDB('escalaDoubleCheck');
+          const letras = await carregarDoIndexedDB('letrasOperadores');
+          if (colab || escRec || escDC) {
+            window.dadosTurnos = {
+              AM: {
+                colaboradores: colab || [],
+                skillsColaboradores: sk || {},
+                escalaRecebimento: escRec || {},
+                escalaDoubleCheck: escDC || {},
+                letrasOperadores: letras || {}
+              }
+            };
+          }
+        }
+
+        const turno = await carregarDoIndexedDB('turnoAtual');
+        if (turno === 'AM' || turno === 'PM') window.turnoAtual = turno;
+
+        const planilha = await carregarDoIndexedDB('planilhaEscala');
+        if (planilha) window.planilhaEscala = planilha;
+
+        const link = await carregarDoIndexedDB('linkPlanilha');
+        if (link) window.linkPlanilha = link;
 
       } catch (err) {
         console.warn("Nenhum dado prévio encontrado no IndexedDB.", err);
       } finally {
-        if (window.renderEstruturas) {
-          window.renderEstruturas();
+        if (window.iniciarSistema) {
+          window.iniciarSistema();
         }
       }
     }
@@ -587,22 +673,361 @@
       { id: 'pacotinhos', label: 'PACOTINHOS', qtd: 4 }
     ];
 
-    window.colaboradores = [
-      'FERNANDA LEAO TEIXEIRA', 'MILENA SILVA SOARES', 'AMANDA CECILIA', 'DIESLEY HENRIQUE', 
-      'IGOR MATHEUS', 'JOSENICE MARINHO', 'LUCAS VINICIUS', 'MARCELO AUGUSTO', 
-      'SOLANGE DE JESUS', 'YASMIN SILVA', 'HELDER SILVA', 'CAUÃ OLIVEIRA', 'OTAVIO'
-    ];
+    /* ============================================================
+       CONFIGURAÇÃO DA PLANILHA DE ESCALA (FOLGAS)
+       ============================================================ */
+    // Cole aqui o link CSV publicado da planilha espelho para que funcione
+    // em QUALQUER computador sem precisar configurar (opcional).
+    const LINK_PLANILHA_PADRAO = '';
 
-    window.skillsColaboradores = {};
-    window.escalaRecebimento = {};
-    window.escalaDoubleCheck = {};
-    window.letrasOperadores = {};
+    // Códigos considerados FOLGA
+    const CODIGOS_FOLGA = ['DSR', 'FO', 'AM'];
+    // Códigos considerados PRESENÇA (célula em branco ou P)
+    const CODIGOS_PRESENCA = ['', 'P'];
+    // Qualquer outro código (F, FC, AL, FE, DV, DF, NC, BH...) = AUSENTE
 
-    diasSemana.forEach(dia => {
-      if (!window.escalaRecebimento[dia]) window.escalaRecebimento[dia] = {};
-      if (!window.escalaDoubleCheck[dia]) window.escalaDoubleCheck[dia] = {};
-      if (!window.letrasOperadores[dia]) window.letrasOperadores[dia] = {};
-    });
+    // Coluna "Lider" -> Turno
+    const MAPA_LIDER_TURNO = { 'MARCELO': 'AM', 'HELDER': 'PM' };
+    const TURNOS = ['AM', 'PM'];
+
+    // Atualiza as folgas automaticamente a cada 10 minutos (se houver link)
+    const INTERVALO_ATUALIZACAO_MS = 10 * 60 * 1000;
+
+    window.turnoAtual = 'AM';
+    window.dadosTurnos = {};
+    window.planilhaEscala = null;
+    window.linkPlanilha = '';
+    window.semanaInicio = null;
+
+    function estadoVazio() {
+      return {
+        colaboradores: [],
+        skillsColaboradores: {},
+        escalaRecebimento: {},
+        escalaDoubleCheck: {},
+        letrasOperadores: {}
+      };
+    }
+
+    function garantirDias(estado) {
+      ['escalaRecebimento', 'escalaDoubleCheck', 'letrasOperadores'].forEach(k => {
+        if (!estado[k]) estado[k] = {};
+        diasSemana.forEach(dia => { if (!estado[k][dia]) estado[k][dia] = {}; });
+      });
+      if (!estado.colaboradores) estado.colaboradores = [];
+      if (!estado.skillsColaboradores) estado.skillsColaboradores = {};
+    }
+
+    // Guarda o que está na tela dentro do turno atual
+    window.salvarEstadoTurnoAtual = function() {
+      window.dadosTurnos[window.turnoAtual] = {
+        colaboradores: window.colaboradores,
+        skillsColaboradores: window.skillsColaboradores,
+        escalaRecebimento: window.escalaRecebimento,
+        escalaDoubleCheck: window.escalaDoubleCheck,
+        letrasOperadores: window.letrasOperadores
+      };
+    };
+
+    // Coloca os dados de um turno na tela
+    function carregarEstadoTurno(turno) {
+      if (!window.dadosTurnos[turno]) window.dadosTurnos[turno] = estadoVazio();
+      const e = window.dadosTurnos[turno];
+      garantirDias(e);
+      window.colaboradores = e.colaboradores;
+      window.skillsColaboradores = e.skillsColaboradores;
+      window.escalaRecebimento = e.escalaRecebimento;
+      window.escalaDoubleCheck = e.escalaDoubleCheck;
+      window.letrasOperadores = e.letrasOperadores;
+    }
+
+    function atualizarBotoesTurno() {
+      TURNOS.forEach(t => {
+        const btn = document.getElementById(`turnoBtn${t}`);
+        if (btn) btn.classList.toggle('active', t === window.turnoAtual);
+      });
+      document.getElementById('tituloTurno').textContent = window.turnoAtual;
+    }
+
+    function trocarTurno(turno) {
+      if (turno === window.turnoAtual) return;
+      window.salvarEstadoTurnoAtual();
+      window.turnoAtual = turno;
+      carregarEstadoTurno(turno);
+      atualizarBotoesTurno();
+      window.renderEstruturas();
+      if (abaAtual === 'dinamica') renderTabelaDinamica();
+      buscarColaborador();
+      if (window.agendarAutoSave) window.agendarAutoSave();
+    }
+
+    /* ---------- SEMANA (datas reais de cada dia) ---------- */
+    function pad2(n) { return String(n).padStart(2, '0'); }
+    function isoDe(d) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
+    function dataDeIso(iso) { return new Date(iso + 'T12:00:00'); }
+    function fmtCurta(iso) { const [y, m, d] = iso.split('-'); return `${d}/${m}`; }
+
+    function segundaDaSemana(d) {
+      const x = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 12);
+      const deslocamento = (x.getDay() + 6) % 7; // segunda = 0
+      x.setDate(x.getDate() - deslocamento);
+      return x;
+    }
+
+    function dataDoDia(dia) {
+      const d = dataDeIso(window.semanaInicio);
+      d.setDate(d.getDate() + diasSemana.indexOf(dia));
+      return isoDe(d);
+    }
+
+    function definirSemana(valor) {
+      const base = valor ? dataDeIso(valor) : new Date();
+      window.semanaInicio = isoDe(segundaDaSemana(base));
+      document.getElementById('semanaInput').value = window.semanaInicio;
+      document.getElementById('semanaLabel').textContent =
+        `${fmtCurta(dataDoDia('segunda'))} a ${fmtCurta(dataDoDia('domingo'))}`;
+      window.renderEstruturas();
+      if (abaAtual === 'dinamica') renderTabelaDinamica();
+      buscarColaborador();
+    }
+
+    function mudarSemana(delta) {
+      const d = dataDeIso(window.semanaInicio);
+      d.setDate(d.getDate() + delta * 7);
+      definirSemana(isoDe(d));
+    }
+
+    /* ---------- LEITURA DA PLANILHA ---------- */
+    function normalizarNome(s) {
+      return String(s || '')
+        .normalize('NFD').replace(/[̀-ͯ]/g, '')
+        .toUpperCase().replace(/\s+/g, ' ').trim();
+    }
+
+    // Remove a matrícula do final do nome (ex.: "ANA LIMA SPXBR5817" -> "ANA LIMA")
+    function limparNomePlanilha(s) {
+      const partes = String(s || '').trim().split(/\s+/);
+      while (partes.length > 1 && /^(SPXBR|AC)\d+$/i.test(partes[partes.length - 1])) partes.pop();
+      return partes.join(' ');
+    }
+
+    function parseCSV(texto) {
+      texto = texto.replace(/^﻿/, '');
+      const linhas = [];
+      let linha = [], campo = '', aspas = false;
+      for (let i = 0; i < texto.length; i++) {
+        const c = texto[i];
+        if (aspas) {
+          if (c === '"') {
+            if (texto[i + 1] === '"') { campo += '"'; i++; }
+            else aspas = false;
+          } else campo += c;
+        } else if (c === '"') aspas = true;
+        else if (c === ',') { linha.push(campo); campo = ''; }
+        else if (c === '\n' || c === '\r') {
+          if (c === '\r' && texto[i + 1] === '\n') i++;
+          linha.push(campo); linhas.push(linha); linha = []; campo = '';
+        } else campo += c;
+      }
+      if (campo !== '' || linha.length) { linha.push(campo); linhas.push(linha); }
+      return linhas;
+    }
+
+    function processarCSV(texto) {
+      const linhas = parseCSV(texto);
+      if (linhas.length < 2) throw new Error('A planilha está vazia.');
+
+      const cab = linhas[0].map(h => normalizarNome(h));
+      const idxNome = cab.findIndex(h => h.startsWith('NOME'));
+      const idxLider = cab.findIndex(h => h.startsWith('LIDER'));
+      if (idxNome < 0 || idxLider < 0) {
+        throw new Error('Não encontrei as colunas "Nome do colaborador(a)" e "Lider" na planilha.');
+      }
+
+      // Colunas de data: aceita dd/mm/aaaa, mm/dd/aaaa (planilha em inglês) e aaaa-mm-dd
+      const brutas = [];
+      cab.forEach((h, i) => {
+        let m = h.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+        if (m) { brutas.push({ i, a: +m[1], b: +m[2], y: m[3] }); return; }
+        m = h.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+        if (m) brutas.push({ i, a: +m[3], b: +m[2], y: m[1] });
+      });
+      if (!brutas.length) throw new Error('Não encontrei colunas de data (ex.: 01/10/2026) na planilha.');
+
+      const formatoAmericano = brutas.some(d => d.b > 12) && !brutas.some(d => d.a > 12);
+      const colunasData = brutas.map(d => {
+        const dia = formatoAmericano ? d.b : d.a;
+        const mes = formatoAmericano ? d.a : d.b;
+        return { i: d.i, iso: `${d.y}-${pad2(mes)}-${pad2(dia)}` };
+      });
+
+      const pessoas = {};
+      linhas.slice(1).forEach(l => {
+        const nome = normalizarNome(limparNomePlanilha(l[idxNome]));
+        if (!nome) return;
+        const lider = normalizarNome(l[idxLider]);
+        const codigos = {};
+        colunasData.forEach(c => { codigos[c.iso] = normalizarNome(l[c.i]); });
+        pessoas[nome] = { lider, turno: MAPA_LIDER_TURNO[lider] || null, codigos };
+      });
+
+      const datas = colunasData.map(c => c.iso).sort();
+      return { datas, pessoas, atualizadoEm: new Date().toISOString() };
+    }
+
+    function aplicarDadosPlanilha(dados) {
+      window.salvarEstadoTurnoAtual();
+      window.planilhaEscala = dados;
+
+      // Inclui automaticamente na escala certa (AM/PM) quem ainda não está cadastrado
+      let adicionados = 0;
+      TURNOS.forEach(turno => {
+        if (!window.dadosTurnos[turno]) window.dadosTurnos[turno] = estadoVazio();
+        const est = window.dadosTurnos[turno];
+        garantirDias(est);
+        const jaTem = new Set(est.colaboradores.map(normalizarNome));
+        Object.keys(dados.pessoas).forEach(nome => {
+          if (dados.pessoas[nome].turno === turno && !jaTem.has(nome)) {
+            est.colaboradores.push(nome);
+            adicionados++;
+          }
+        });
+      });
+
+      carregarEstadoTurno(window.turnoAtual);
+      atualizarStatusPlanilha();
+      window.renderEstruturas();
+      if (abaAtual === 'dinamica') renderTabelaDinamica();
+      if (window.agendarAutoSave) window.agendarAutoSave();
+      return adicionados;
+    }
+
+    function atualizarStatusPlanilha(erro) {
+      const el = document.getElementById('planilhaStatus');
+      const p = window.planilhaEscala;
+      if (erro) {
+        el.className = 'status-badge status-erro';
+        el.textContent = p ? '🔴 Erro ao atualizar (usando última cópia)' : '🔴 Erro ao ler a planilha';
+        el.title = erro;
+        return;
+      }
+      el.title = '';
+      if (!p) {
+        el.className = 'status-badge status-neutro';
+        el.textContent = '⚪ Planilha não conectada';
+        return;
+      }
+      const qtd = Object.keys(p.pessoas).length;
+      const hora = new Date(p.atualizadoEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+      el.className = 'status-badge status-saved';
+      el.textContent = `🟢 Planilha: ${qtd} pessoas · ${fmtCurta(p.datas[0])} a ${fmtCurta(p.datas[p.datas.length - 1])} · atualizada ${hora}`;
+    }
+
+    async function atualizarPlanilha(silencioso) {
+      const link = (window.linkPlanilha || LINK_PLANILHA_PADRAO || '').trim();
+      if (!link) {
+        if (!silencioso) alert('Nenhum link de planilha configurado. Entre como Admin, cole o link CSV publicado e clique em "Salvar link" (ou use "Importar CSV").');
+        return;
+      }
+      const el = document.getElementById('planilhaStatus');
+      el.className = 'status-badge status-saving';
+      el.textContent = '🟡 Baixando planilha...';
+      try {
+        const url = link + (link.includes('?') ? '&' : '?') + '_t=' + Date.now();
+        const resp = await fetch(url, { cache: 'no-store' });
+        if (!resp.ok) throw new Error(`O link respondeu com erro ${resp.status}.`);
+        const texto = await resp.text();
+        if (texto.trim().startsWith('<')) {
+          throw new Error('O link não devolveu um CSV. Use Arquivo > Compartilhar > Publicar na Web, escolha o formato "Valores separados por vírgula (.csv)" e copie esse link.');
+        }
+        aplicarDadosPlanilha(processarCSV(texto));
+      } catch (e) {
+        console.error(e);
+        atualizarStatusPlanilha(e.message || String(e));
+        if (!silencioso) alert('Não foi possível ler a planilha: ' + (e.message || e));
+      }
+    }
+
+    function salvarLinkPlanilha() {
+      if (window.perfilAtual !== 'admin') return;
+      window.linkPlanilha = document.getElementById('linkPlanilhaInput').value.trim();
+      if (window.agendarAutoSave) window.agendarAutoSave();
+      if (window.linkPlanilha) {
+        atualizarPlanilha(false);
+        iniciarAutoAtualizacaoPlanilha();
+      } else alert('Link removido.');
+    }
+
+    function importarCSVArquivo(input) {
+      if (window.perfilAtual !== 'admin') { input.value = ''; return; }
+      const arquivo = input.files && input.files[0];
+      if (!arquivo) return;
+      const leitor = new FileReader();
+      leitor.onload = () => {
+        try {
+          const add = aplicarDadosPlanilha(processarCSV(leitor.result));
+          alert(`Planilha importada! ${add} colaborador(es) novo(s) incluído(s) nas escalas AM/PM.`);
+        } catch (e) {
+          atualizarStatusPlanilha(e.message);
+          alert('Não foi possível ler o arquivo: ' + e.message);
+        }
+        input.value = '';
+      };
+      leitor.readAsText(arquivo, 'UTF-8');
+    }
+
+    /* ---------- STATUS DE CADA PESSOA NO DIA ---------- */
+    // tipo: 'presente' | 'folga' | 'ausente' | 'sem_dado'
+    function statusColaborador(nome, dia) {
+      const p = window.planilhaEscala;
+      if (!p || !window.semanaInicio) return { tipo: 'sem_dado', codigo: '' };
+      const pessoa = p.pessoas[normalizarNome(nome)];
+      if (!pessoa) return { tipo: 'sem_dado', codigo: '' };
+      const iso = dataDoDia(dia);
+      if (!(iso in pessoa.codigos)) return { tipo: 'sem_dado', codigo: '' };
+      const codigo = pessoa.codigos[iso];
+      if (CODIGOS_PRESENCA.includes(codigo)) return { tipo: 'presente', codigo };
+      if (CODIGOS_FOLGA.includes(codigo)) return { tipo: 'folga', codigo };
+      return { tipo: 'ausente', codigo };
+    }
+
+    function disponivelNoDia(nome, dia) {
+      const t = statusColaborador(nome, dia).tipo;
+      return t === 'presente' || t === 'sem_dado';
+    }
+
+    function resumoDia(dia) {
+      const r = { presente: 0, folga: 0, ausente: 0, sem_dado: 0 };
+      window.colaboradores.forEach(n => r[statusColaborador(n, dia).tipo]++);
+      return r;
+    }
+
+    function htmlResumoDia(dia) {
+      if (!window.planilhaEscala) return '';
+      const r = resumoDia(dia);
+      const semDado = r.sem_dado ? ` · ❔ ${r.sem_dado} sem dado` : '';
+      return `<span class="day-stats">✅ ${r.presente} presentes · 🛌 ${r.folga} folga · 🚫 ${r.ausente} ausentes${semDado}</span>`;
+    }
+
+    window.iniciarSistema = function() {
+      carregarEstadoTurno(window.turnoAtual);
+      atualizarBotoesTurno();
+      document.getElementById('linkPlanilhaInput').value = window.linkPlanilha || '';
+      atualizarStatusPlanilha();
+      definirSemana(null); // abre na semana atual (já renderiza)
+      if ((window.linkPlanilha || LINK_PLANILHA_PADRAO).trim()) {
+        atualizarPlanilha(true);
+        iniciarAutoAtualizacaoPlanilha();
+      }
+    };
+
+    carregarEstadoTurno('AM');
+    window.semanaInicio = isoDe(segundaDaSemana(new Date()));
+
+    let timerPlanilha = null;
+    function iniciarAutoAtualizacaoPlanilha() {
+      if (!timerPlanilha) timerPlanilha = setInterval(() => atualizarPlanilha(true), INTERVALO_ATUALIZACAO_MS);
+    }
 
     /* GERENCIAMENTO DE PERFIL DE ACESSO */
     function entrarComoAdmin() {
@@ -708,14 +1133,22 @@
       aplicarPermissoesPerfil();
     };
 
-    function buildOptionsHTML() {
-      let optionsHtml = '<option value="">- Selecione -</option>';
+    // Monta a lista do dia: disponíveis primeiro, depois quem está de folga/ausente (bloqueado)
+    function buildOptionsHTML(dia) {
+      let disponiveis = '';
+      let bloqueados = '';
       for (let i = 0; i < window.colaboradores.length; i++) {
         const nomeCompleto = window.colaboradores[i];
         const nomeAbreviado = formatarNomeAbreviado(nomeCompleto);
-        optionsHtml += `<option value="${nomeCompleto}">${nomeAbreviado}</option>`;
+        const st = dia ? statusColaborador(nomeCompleto, dia) : { tipo: 'sem_dado' };
+        if (st.tipo === 'folga' || st.tipo === 'ausente') {
+          const icone = st.tipo === 'folga' ? '🛌' : '🚫';
+          bloqueados += `<option value="${nomeCompleto}" disabled>${icone} ${nomeAbreviado} (${st.codigo})</option>`;
+        } else {
+          disponiveis += `<option value="${nomeCompleto}">${nomeAbreviado}</option>`;
+        }
       }
-      return optionsHtml;
+      return '<option value="">- Selecione -</option>' + disponiveis + bloqueados;
     }
 
     function buildLetterOptionsHTML(letraSelecionada) {
@@ -729,10 +1162,10 @@
 
     function renderRecebimento() {
       const container = document.getElementById('diasContainerRecebimento');
-      const optionsHtml = buildOptionsHTML();
       let htmlFinal = '';
 
       diasSemana.forEach(dia => {
+        const optionsHtml = buildOptionsHTML(dia);
         let contentHtml = '';
 
         // MONTAR AS COLUNAS DE MESAS LADO A LADO
@@ -822,7 +1255,8 @@
         htmlFinal += `
           <div class="day-block" id="block_rec_${dia}">
             <div class="day-header ${dia}">
-              <span>RECEBIMENTO GERAL - ${nomesDias[dia].toUpperCase()}</span>
+              <span>RECEBIMENTO GERAL ${window.turnoAtual} - ${nomesDias[dia].toUpperCase()} <span class="day-date">${fmtCurta(dataDoDia(dia))}</span></span>
+              ${htmlResumoDia(dia)}
               <div class="day-header-actions admin-only">
                 <button class="btn btn-outline-purple btn-sm" onclick="sortearDia('rec', '${dia}')">🎲 Sortear Dia</button>
                 <button class="btn btn-outline-red btn-sm" onclick="resetarDia('rec', '${dia}')">🧹 Resetar</button>
@@ -851,10 +1285,10 @@
 
     function renderDoubleCheck() {
       const container = document.getElementById('diasContainerDoubleCheck');
-      const optionsHtml = buildOptionsHTML();
       let htmlFinal = '';
 
       diasSemana.forEach(dia => {
+        const optionsHtml = buildOptionsHTML(dia);
         let contentHtml = '';
 
         for (let m = 1; m <= 14; m += 2) {
@@ -909,7 +1343,8 @@
         htmlFinal += `
           <div class="day-block" id="block_dc_${dia}">
             <div class="day-header ${dia}">
-              <span>DOUBLE CHECK - ${nomesDias[dia].toUpperCase()}</span>
+              <span>DOUBLE CHECK ${window.turnoAtual} - ${nomesDias[dia].toUpperCase()} <span class="day-date">${fmtCurta(dataDoDia(dia))}</span></span>
+              ${htmlResumoDia(dia)}
               <div class="day-header-actions admin-only">
                 <button class="btn btn-outline-purple btn-sm" onclick="sortearDia('dc', '${dia}')">🎲 Sortear Dia</button>
                 <button class="btn btn-outline-red btn-sm" onclick="resetarDia('dc', '${dia}')">🧹 Resetar</button>
@@ -1153,7 +1588,8 @@
     }
 
     function obterProximoDisponivel(candidatos, jaAlocadosNoDia, usoFuncaoSemana, funcao, dia, maximoUso = 3) {
-      const aptos = candidatos.filter(c => colaboradorAptoParaFuncao(c, funcao));
+      // Só entra no sorteio quem tem a skill E não está de folga/ausente no dia
+      const aptos = candidatos.filter(c => colaboradorAptoParaFuncao(c, funcao) && disponivelNoDia(c, dia));
 
       for (let c of aptos) {
         if (jaAlocadosNoDia.has(c)) continue;
@@ -1264,7 +1700,7 @@
         const usoFuncaoSemana = {};
         executarAlocacaoDiaRecebimento(dia, jaAlocadosNoDia, usoFuncaoSemana);
       } else {
-        const disponiveis = [...window.colaboradores];
+        const disponiveis = window.colaboradores.filter(c => disponivelNoDia(c, dia));
         const embaralhados = [...disponiveis].sort(() => Math.random() - 0.5);
         let idx = 0;
 
@@ -1293,7 +1729,10 @@
       const containerAba = (abaAtual === 'recebimento') ? document.getElementById('tab-recebimento') : document.getElementById('tab-doublecheck');
 
       const allSelects = containerAba.querySelectorAll('select.select-operator, select[data-funcao]');
-      allSelects.forEach(s => s.classList.remove('duplicate-same-day', 'duplicate-yellow', 'duplicate-purple', 'duplicate-red'));
+      allSelects.forEach(s => {
+        s.classList.remove('duplicate-same-day', 'duplicate-yellow', 'duplicate-purple', 'duplicate-red', 'conflito-folga');
+        s.removeAttribute('title');
+      });
 
       const contadorPessoaFuncaoSemana = {};
 
@@ -1312,6 +1751,13 @@
           const funcao = selectEl.getAttribute('data-funcao');
 
           if (nome && nome !== '') {
+            // Escalado em dia de folga/ausência segundo a planilha
+            const st = statusColaborador(nome, dia);
+            if (st.tipo === 'folga' || st.tipo === 'ausente') {
+              selectEl.classList.add('conflito-folga');
+              selectEl.title = `${formatarNomeAbreviado(nome)} está ${st.tipo === 'folga' ? 'de FOLGA' : 'AUSENTE'} (${st.codigo}) neste dia segundo a planilha`;
+              return;
+            }
             if (contadorPessoaDia[nome] > 1) {
               selectEl.classList.add('duplicate-same-day');
             } else if (funcao) {
@@ -1417,7 +1863,12 @@
         });
       });
 
-      const naoEscalados = todosColaboradores.filter(nome => !jaEscaladosSet.has(nome));
+      // Não escalado = não está em nenhum posto E trabalha em pelo menos um dos dias olhados
+      const naoEscalados = todosColaboradores.filter(nome =>
+        !jaEscaladosSet.has(nome) && diasAlvo.some(dia => disponivelNoDia(nome, dia))
+      );
+
+      renderListaFolgas(verDiaVal);
 
       document.getElementById('countInfo').innerText = `NÃO ESCALADOS (${naoEscalados.length})`;
       const listEl = document.getElementById('listaNaoEscalados');
@@ -1447,6 +1898,41 @@
       listEl.innerHTML = htmlChips;
     }
 
+    // Lista de quem está de folga ou ausente no dia escolhido em "Ver Dia"
+    function renderListaFolgas(verDiaVal) {
+      const titulo = document.getElementById('countFolgas');
+      const lista = document.getElementById('listaFolgas');
+
+      if (!window.planilhaEscala) {
+        titulo.innerText = '🛌 FOLGA / AUSENTES';
+        lista.innerHTML = '<span style="font-size: 9px; color: #94a3b8; font-weight: 700;">Conecte a planilha para ver as folgas.</span>';
+        return;
+      }
+      if (verDiaVal === 'todos') {
+        titulo.innerText = '🛌 FOLGA / AUSENTES';
+        lista.innerHTML = '<span style="font-size: 9px; color: #94a3b8; font-weight: 700;">Escolha um dia em "Ver Dia" para ver quem está de folga.</span>';
+        return;
+      }
+
+      const fora = [];
+      window.colaboradores.forEach(nome => {
+        const st = statusColaborador(nome, verDiaVal);
+        if (st.tipo === 'folga' || st.tipo === 'ausente') fora.push({ nome, st });
+      });
+      fora.sort((a, b) => (a.st.tipo === b.st.tipo ? 0 : a.st.tipo === 'folga' ? -1 : 1));
+
+      titulo.innerText = `🛌 FOLGA / AUSENTES EM ${nomesDias[verDiaVal].toUpperCase()} ${fmtCurta(dataDoDia(verDiaVal))} (${fora.length})`;
+      if (!fora.length) {
+        lista.innerHTML = '<span style="font-size: 9px; color: #6ee7b7; font-weight: 700;">Ninguém de folga neste dia.</span>';
+        return;
+      }
+      lista.innerHTML = fora.map(({ nome, st }) => `
+        <div class="chip-user ${st.tipo === 'folga' ? 'chip-folga' : 'chip-ausente'}" title="${st.tipo === 'folga' ? 'Folga' : 'Ausente'}">
+          <span>${st.tipo === 'folga' ? '🛌' : '🚫'} ${formatarNomeAbreviado(nome)} (${st.codigo})</span>
+        </div>
+      `).join('');
+    }
+
     function abrirModalPrint() {
       document.getElementById('printSetorSelect').value = abaAtual === 'recebimento' ? 'rec' : 'dc';
       document.getElementById('downloadImageBtn').style.display = 'none';
@@ -1468,7 +1954,7 @@
       captureArea.innerHTML = '';
 
       let htmlPrint = `<div style="display: flex; flex-direction: column; gap: 20px;">`;
-      htmlPrint += `<h2 style="text-align: center; color: #60a5fa; margin: 0 0 10px 0; font-size: 22px; font-weight: 900; text-transform: uppercase; letter-spacing: 1px;">ESCALA SEGUNDA A DOMINGO - ${setor === 'rec' ? 'RECEBIMENTO GERAL' : 'DOUBLE CHECK'}</h2>`;
+      htmlPrint += `<h2 style="text-align: center; color: #60a5fa; margin: 0 0 10px 0; font-size: 22px; font-weight: 900; text-transform: uppercase; letter-spacing: 1px;">ESCALA ${window.turnoAtual} - ${setor === 'rec' ? 'RECEBIMENTO GERAL' : 'DOUBLE CHECK'} - SEMANA ${fmtCurta(dataDoDia('segunda'))} A ${fmtCurta(dataDoDia('domingo'))}</h2>`;
 
       let diasParaImprimir = (modoPrint === 'dia_selecionado') ? [verDiaVal] : diasSemana;
 
@@ -1541,7 +2027,7 @@
           img.style.border = '1px solid #334155';
           previewBox.appendChild(img);
 
-          const nomeArquivo = `Escala_${setor.toUpperCase()}_Seg_Dom.png`;
+          const nomeArquivo = `Escala_${window.turnoAtual}_${setor.toUpperCase()}_${window.semanaInicio}.png`;
 
           const btnDownload = document.getElementById('downloadImageBtn');
           btnDownload.href = canvas.toDataURL('image/png', 1.0);
