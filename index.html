@@ -1208,7 +1208,7 @@
               </div>
             `;
           }
-          contentHtml += `<div class="extra-card"><div class="card-title">${ext.label} (${ext.qtd})</div>${slotsExtraHtml}</div>`;
+          contentHtml += `<div class="extra-card" data-extra="${ext.id}"><div class="card-title">${ext.label} (${ext.qtd})</div>${slotsExtraHtml}</div>`;
         });
 
         // CARD CAPACIDADE PRINCIPAL MODIFICADO (40 PESSOAS: 10 COLUNAS x 4 LINHAS)
@@ -1997,6 +1997,9 @@
           }
         });
       });
+
+      // Na imagem não mostra o CAR DE GAIOLERO; assim o card de VOLUMOSOS sobe para o lado do HANDOVER
+      captureArea.querySelectorAll('.extra-card[data-extra="gaioleiro"]').forEach(c => c.remove());
 
       captureArea.querySelectorAll('button').forEach(b => b.remove());
       captureArea.querySelectorAll('.day-block').forEach(b => b.classList.remove('day-hidden'));
