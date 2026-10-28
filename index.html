@@ -1839,48 +1839,44 @@
       return null;
     }
 
+    /* ============================================================
+       REGRAS DO SORTEIO DO RECEBIMENTO
+       - Sorteia só os cards das Mesas 1 a 6 (Mesa 1/2, 3/4 e 5/6)
+       - Card Capacidade: só 5 ruas, com 3 pessoas por rua
+         (1 Pescador + 2 separando)
+       - Os demais cards ficam para preencher à mão
+       ============================================================ */
+    const MESAS_SORTEIO_REC = ['m1_2', 'm3_4', 'm5_6'];
+    const RUAS_SORTEIO_REC = 5;
+    const PESSOAS_POR_RUA = 3;
+
     function executarAlocacaoDiaRecebimento(dia, jaAlocadosNoDia, usoFuncaoSemana) {
       window.escalaRecebimento[dia] = {};
 
-      const mesasCompletas = ['m1_2', 'm3_4', 'm5_6', 'm7_8', 'm9_10', 'm11_12'];
-      const slotsCompletos = ['abastecedor', 'bipador_1', 'etiquetador_1', 'bipador_2', 'etiquetador_2'];
+      const sortearPosto = (chave, funcao) => {
+        const candidatos = [...window.colaboradores].sort(() => Math.random() - 0.5);
+        const escolhido = obterProximoDisponivel(candidatos, jaAlocadosNoDia, usoFuncaoSemana, funcao, dia, 3);
+        if (escolhido) {
+          window.escalaRecebimento[dia][chave] = escolhido;
+          jaAlocadosNoDia.add(escolhido);
+          usoFuncaoSemana[`${escolhido}|${funcao}`] = (usoFuncaoSemana[`${escolhido}|${funcao}`] || 0) + 1;
+        }
+      };
 
-      mesasCompletas.forEach(pairId => {
-        slotsCompletos.forEach(slot => {
-          const funcaoNome = slot.includes('bipador') ? 'bipador' : (slot.includes('etiquetador') ? 'etiquetador' : slot);
-          const candidatos = [...window.colaboradores].sort(() => Math.random() - 0.5);
-          const escolhido = obterProximoDisponivel(candidatos, jaAlocadosNoDia, usoFuncaoSemana, funcaoNome, dia, 3);
-
-          if (escolhido) {
-            window.escalaRecebimento[dia][`${pairId}_${slot}`] = escolhido;
-            jaAlocadosNoDia.add(escolhido);
-            usoFuncaoSemana[`${escolhido}|${funcaoNome}`] = (usoFuncaoSemana[`${escolhido}|${funcaoNome}`] || 0) + 1;
-          }
+      // CARDS DAS MESAS 1 A 6
+      const slotsMesa = ['abastecedor', 'bipador_1', 'etiquetador_1', 'bipador_2', 'etiquetador_2'];
+      MESAS_SORTEIO_REC.forEach(pairId => {
+        slotsMesa.forEach(slot => {
+          const funcao = slot.includes('bipador') ? 'bipador' : (slot.includes('etiquetador') ? 'etiquetador' : slot);
+          sortearPosto(`${pairId}_${slot}`, funcao);
         });
       });
 
-      // DEMAIS EXTRAS (CAR DE GAIOLERO, HANDOVER, VOLUMOSOS)
-      funcoesExtrasRec.forEach(ext => {
-        for (let i = 1; i <= ext.qtd; i++) {
-          const keySlot = ext.id === 'gaioleiro' ? `extra_gaioleiro_${i}` : `extra_${ext.id}_${i}`;
-          const candidatos = [...window.colaboradores].sort(() => Math.random() - 0.5);
-          const escolhido = obterProximoDisponivel(candidatos, jaAlocadosNoDia, usoFuncaoSemana, ext.id, dia, 3);
-          if (escolhido) {
-            window.escalaRecebimento[dia][keySlot] = escolhido;
-            jaAlocadosNoDia.add(escolhido);
-            usoFuncaoSemana[`${escolhido}|${ext.id}`] = (usoFuncaoSemana[`${escolhido}|${ext.id}`]| 0) + 1;
-          }
-        }
-      });
-
-      // CARD CAPACIDADE (40 PESSOAS: 10 COLUNAS x 4 LINHAS)
-      for (let i = 1; i <= 40; i++) {
-        const candidatos = [...window.colaboradores].sort(() => Math.random() - 0.5);
-        const escolhido = obterProximoDisponivel(candidatos, jaAlocadosNoDia, usoFuncaoSemana, 'card_8p', dia, 3);
-        if (escolhido) {
-          window.escalaRecebimento[dia][`extra_card_8p_${i}`] = escolhido;
-          jaAlocadosNoDia.add(escolhido);
-          usoFuncaoSemana[`${escolhido}|card_8p`] = (usoFuncaoSemana[`${escolhido}|card_8p`]| 0) + 1;
+      // CARD CAPACIDADE: RUAS 1 A 5, CADA UMA COM PESCADOR (LINHA 1) + 2 SEPARANDO (LINHAS 2 E 3)
+      for (let rua = 1; rua <= RUAS_SORTEIO_REC; rua++) {
+        for (let linha = 1; linha <= PESSOAS_POR_RUA; linha++) {
+          const indexOp = (rua - 1) * 4 + linha;
+          sortearPosto(`extra_card_8p_${indexOp}`, 'card_8p');
         }
       }
     }
