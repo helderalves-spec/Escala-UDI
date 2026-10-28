@@ -260,6 +260,8 @@
   <!-- FIREBASE SDK MODULAR (v9+) INTEGRADO -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+    import { getDatabase, ref, onValue, update, get, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
+    import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyAlw_QBwvkTkWKG8JLA1UKlpnienQeu5XA",
@@ -274,6 +276,15 @@
     // Inicializa a aplicação Firebase
     const app = initializeApp(firebaseConfig);
     window.firebaseApp = app;
+
+    // Ferramentas do Firebase usadas pelo sistema (banco em tempo real + login)
+    window.fb = {
+      db: getDatabase(app),
+      auth: getAuth(app),
+      ref, onValue, update, get, serverTimestamp,
+      signInWithEmailAndPassword, signOut, onAuthStateChanged
+    };
+    window.dispatchEvent(new Event('firebase-pronto'));
   </script>
 </head>
 <body>
@@ -282,7 +293,7 @@
   <div class="top-bar">
     <h1>Gerenciador de Escalas Pro (Segunda a Domingo) - <span id="tituloTurno">AM</span></h1>
     <div class="action-buttons">
-      <span id="storageStatus" class="status-badge status-saved">🟢 Armazenado Localmente</span>
+      <span id="storageStatus" class="status-badge status-saving">⏳ Conectando à nuvem...</span>
       <button class="btn btn-outline-yellow admin-only" onclick="abrirModalSkills()">🎯 Skills / Competências</button>
       <button class="btn btn-outline-blue" onclick="abrirModalPrint()">📷 Imagem (.png HD)</button>
       <button class="btn btn-outline-purple admin-only" onclick="sortearSemana()">🎲 Sortear Escala</button>
@@ -298,10 +309,12 @@
       <span id="roleDesc" style="color: #94a3b8; font-weight: normal;">(Apenas visualização)</span>
     </div>
     <div class="login-box">
-      <div id="loginForm">
-        <input type="password" id="adminPasswordInput" class="login-input" placeholder="Senha Admin">
-        <button class="btn btn-blue-solid" onclick="entrarComoAdmin()">Entrar como Admin</button>
+      <div id="loginForm" style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+        <input type="email" id="adminEmailInput" class="login-input" style="width: 190px;" placeholder="E-mail do Admin" autocomplete="username">
+        <input type="password" id="adminPasswordInput" class="login-input" placeholder="Senha" autocomplete="current-password" onkeydown="if(event.key==='Enter') entrarComoAdmin()">
+        <button class="btn btn-blue-solid" id="btnEntrarAdmin" onclick="entrarComoAdmin()">Entrar como Admin</button>
       </div>
+      <span id="adminEmailLabel" style="font-size: 11px; color: #6ee7b7; font-weight: 700; display: none;"></span>
       <button id="btnLogout" class="btn btn-outline-red" style="display: none;" onclick="sairParaEspectador()">Sair do Modo Admin</button>
     </div>
   </div>
@@ -324,7 +337,7 @@
     </div>
     <div class="planilha-group">
       <span id="planilhaStatus" class="status-badge status-neutro">⚪ Planilha não conectada</span>
-      <button class="btn btn-outline-yellow btn-sm" onclick="atualizarPlanilha(false)">🔄 Atualizar Folgas</button>
+      <button class="btn btn-outline-yellow btn-sm admin-only" onclick="atualizarPlanilha(false)">🔄 Atualizar Folgas</button>
     </div>
     <div class="planilha-group admin-only">
       <input type="text" id="linkPlanilhaInput" class="link-input" placeholder="Cole aqui o link CSV publicado da planilha">
@@ -559,7 +572,13 @@
           await salvarNoIndexedDB('planilhaEscala', window.planilhaEscala || null);
           await salvarNoIndexedDB('linkPlanilha', window.linkPlanilha || '');
 
-          atualizarStatus("🟢 Armazenado Localmente", "status-saved");
+          if (window.salvarNaNuvem && window.salvarNaNuvem()) {
+            // o status é atualizado quando a nuvem confirmar
+          } else if (window.atualizarStatusNuvem) {
+            window.atualizarStatusNuvem();
+          } else {
+            atualizarStatus("🟢 Armazenado Localmente", "status-saved");
+          }
         } catch (e) {
           console.error("Erro no salvamento IndexedDB: ", e);
           atualizarStatus("🔴 Erro ao salvar", "status-saving");
@@ -619,7 +638,6 @@
 
     let abaAtual = 'recebimento';
     window.perfilAtual = 'espectador';
-    const SENHA_ADMIN = "1013";
 
     const ALFABETO = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 
@@ -658,7 +676,6 @@
       { id: 'card_8p', label: 'Card Capacidade' },
       { id: 'mesa_dc', label: 'Mesa DC' },
       { id: 'puxar_gaiolas', label: 'Puxar Gaiolas' },
-      { id: 'tratativa_pacotes', label: 'Tratativa' },
       { id: 'pacotinhos', label: 'Pacotinhos' }
     ];
 
@@ -667,6 +684,9 @@
       { id: 'handover', label: 'HANDOVER', qtd: 6 },
       { id: 'volumosos', label: 'VOLUMOSOS', qtd: 6 }
     ];
+
+    // DOUBLE CHECK: quantidade total de mesas (todas normais, sem mesa de tratativa)
+    const TOTAL_MESAS_DC = 24;
 
     const funcoesDC = [
       { id: 'puxar_gaiolas', label: 'PUXAR GAIOLAS', qtd: 4 },
@@ -924,6 +944,8 @@
     }
 
     async function atualizarPlanilha(silencioso) {
+      // Só o admin baixa a planilha; os espectadores recebem as folgas pela nuvem
+      if (window.perfilAtual !== 'admin') return;
       const link = (window.linkPlanilha || LINK_PLANILHA_PADRAO || '').trim();
       if (!link) {
         if (!silencioso) alert('Nenhum link de planilha configurado. Entre como Admin, cole o link CSV publicado e clique em "Salvar link" (ou use "Importar CSV").');
@@ -1015,10 +1037,7 @@
       document.getElementById('linkPlanilhaInput').value = window.linkPlanilha || '';
       atualizarStatusPlanilha();
       definirSemana(null); // abre na semana atual (já renderiza)
-      if ((window.linkPlanilha || LINK_PLANILHA_PADRAO).trim()) {
-        atualizarPlanilha(true);
-        iniciarAutoAtualizacaoPlanilha();
-      }
+      conectarNuvem();
     };
 
     carregarEstadoTurno('AM');
@@ -1026,28 +1045,281 @@
 
     let timerPlanilha = null;
     function iniciarAutoAtualizacaoPlanilha() {
-      if (!timerPlanilha) timerPlanilha = setInterval(() => atualizarPlanilha(true), INTERVALO_ATUALIZACAO_MS);
+      if (!timerPlanilha) timerPlanilha = setInterval(() => {
+        if (window.perfilAtual === 'admin') atualizarPlanilha(true);
+      }, INTERVALO_ATUALIZACAO_MS);
     }
 
     /* GERENCIAMENTO DE PERFIL DE ACESSO */
-    function entrarComoAdmin() {
-      const input = document.getElementById('adminPasswordInput');
-      if (input.value === SENHA_ADMIN) {
-        window.perfilAtual = 'admin';
-        document.body.classList.remove('is-viewer');
-        document.getElementById('roleBadge').className = 'badge-role role-admin';
-        document.getElementById('roleBadge').innerHTML = '⚡ Administrador';
-        document.getElementById('roleDesc').innerHTML = '(Edição Habilitada)';
-        document.getElementById('loginForm').style.display = 'none';
-        document.getElementById('btnLogout').style.display = 'inline-block';
-        input.value = '';
-        aplicarPermissoesPerfil();
+    /* ============================================================
+       NUVEM (FIREBASE): escala compartilhada em tempo real
+       ============================================================
+       - Todos que abrem o sistema veem a mesma escala, atualizada na hora.
+       - Só quem entra como Admin (e-mail cadastrado no Firebase e liberado
+         no nó "admins" do banco) consegue alterar.
+       - Cada computador guarda uma cópia local (IndexedDB) para abrir rápido
+         e continuar funcionando se a internet cair.                      */
+    const CAMINHO_NUVEM = 'escalaMarceloHelder';
+    const PARTES_NUVEM = ['turnos/AM', 'turnos/PM', 'planilha', 'linkPlanilha'];
+
+    const nuvem = {
+      iniciada: false,
+      indisponivel: false,   // SDK não carregou ou sem permissão de leitura
+      conectada: false,      // conexão ativa com o servidor
+      recebeuPrimeiro: false,
+      vazia: false,
+      ultimo: {},            // último conteúdo conhecido de cada parte na nuvem
+      salvando: false,
+      fila: [],              // ações esperando o primeiro carregamento da nuvem
+      ultimaAlteracao: null
+    };
+    window.ehAdminNuvem = false;
+    window.emailAdmin = '';
+
+    function quandoNuvemPronta(fn) {
+      if (nuvem.recebeuPrimeiro || nuvem.indisponivel) fn();
+      else nuvem.fila.push(fn);
+    }
+    function liberarFilaNuvem() {
+      const f = nuvem.fila.splice(0);
+      f.forEach(fn => { try { fn(); } catch (e) { console.error(e); } });
+    }
+
+    window.atualizarStatusNuvem = function() {
+      if (nuvem.indisponivel) {
+        atualizarStatus('💾 Sem nuvem: salvo só neste computador', 'status-erro');
+      } else if (!nuvem.conectada) {
+        atualizarStatus('🔴 Offline: tentando reconectar...', 'status-erro');
+      } else if (!nuvem.recebeuPrimeiro) {
+        atualizarStatus('⏳ Carregando da nuvem...', 'status-saving');
       } else {
-        alert('Senha incorreta!');
+        const quem = nuvem.ultimaAlteracao && nuvem.ultimaAlteracao.por ? ` · última alteração: ${nuvem.ultimaAlteracao.por}` : '';
+        atualizarStatus(`☁️ Sincronizado na nuvem${quem}`, 'status-saved');
+      }
+    };
+
+    function lerParte(val, chave) {
+      if (!val) return undefined;
+      if (chave.startsWith('turnos/')) return val.turnos ? val.turnos[chave.split('/')[1]] : undefined;
+      return val[chave];
+    }
+
+    // Conteúdo local no mesmo formato gravado na nuvem (texto JSON por parte)
+    function partesLocais() {
+      if (window.salvarEstadoTurnoAtual) window.salvarEstadoTurnoAtual();
+      return {
+        'turnos/AM': JSON.stringify(window.dadosTurnos.AM || estadoVazio()),
+        'turnos/PM': JSON.stringify(window.dadosTurnos.PM || estadoVazio()),
+        'planilha': JSON.stringify(window.planilhaEscala || null),
+        'linkPlanilha': window.linkPlanilha || ''
+      };
+    }
+
+    // Envia para a nuvem só o que mudou. Retorna true se iniciou um envio.
+    window.salvarNaNuvem = function() {
+      if (!window.fb || nuvem.indisponivel || !nuvem.recebeuPrimeiro) return false;
+      if (window.perfilAtual !== 'admin' || !window.ehAdminNuvem) return false;
+
+      const locais = partesLocais();
+      const mudancas = {};
+      PARTES_NUVEM.forEach(k => { if (locais[k] !== nuvem.ultimo[k]) mudancas[k] = locais[k]; });
+      if (!Object.keys(mudancas).length) return false;
+
+      mudancas['meta'] = { por: window.emailAdmin || 'admin', em: window.fb.serverTimestamp() };
+      Object.keys(mudancas).forEach(k => { if (k !== 'meta') nuvem.ultimo[k] = mudancas[k]; });
+      nuvem.vazia = false;
+
+      atualizarStatus('🟡 Salvando na nuvem...', 'status-saving');
+      window.fb.update(window.fb.ref(window.fb.db, CAMINHO_NUVEM), mudancas)
+        .then(() => window.atualizarStatusNuvem())
+        .catch(err => {
+          console.error('Erro ao salvar na nuvem', err);
+          // Esquece o que "achava" que estava na nuvem para tentar de novo no próximo salvamento
+          Object.keys(mudancas).forEach(k => { if (k !== 'meta') delete nuvem.ultimo[k]; });
+          if (String(err && (err.code || err.message)).toUpperCase().includes('PERMISSION')) {
+            atualizarStatus('🔴 Sem permissão para salvar na nuvem', 'status-erro');
+            alert('O Firebase recusou a gravação. Verifique se o seu usuário está liberado no nó "admins" e se as regras do banco foram publicadas.');
+          } else {
+            atualizarStatus('🔴 Erro ao salvar na nuvem (salvo neste computador)', 'status-erro');
+          }
+        });
+      return true;
+    };
+
+    // Recebe a escala da nuvem (primeira carga e cada alteração feita por outro admin)
+    function aplicarDadosNuvem(val) {
+      nuvem.ultimaAlteracao = val && val.meta ? val.meta : null;
+
+      if (!val || !val.turnos) {
+        nuvem.vazia = true;
+        const primeira = !nuvem.recebeuPrimeiro;
+        nuvem.recebeuPrimeiro = true;
+        window.atualizarStatusNuvem();
+        if (primeira) liberarFilaNuvem();
+        // Nuvem vazia: o primeiro admin que entrar envia a escala deste computador
+        window.salvarNaNuvem();
+        return;
+      }
+      nuvem.vazia = false;
+
+      const locais = partesLocais();
+      let mudou = false;
+      PARTES_NUVEM.forEach(k => {
+        const remoto = lerParte(val, k);
+        if (remoto === undefined) return;
+        nuvem.ultimo[k] = remoto;
+        if (remoto === locais[k]) return;
+        mudou = true;
+        try {
+          if (k.startsWith('turnos/')) {
+            const estado = JSON.parse(remoto);
+            garantirDias(estado);
+            window.dadosTurnos[k.split('/')[1]] = estado;
+          } else if (k === 'planilha') {
+            window.planilhaEscala = JSON.parse(remoto);
+          } else if (k === 'linkPlanilha') {
+            window.linkPlanilha = remoto;
+            const inp = document.getElementById('linkPlanilhaInput');
+            if (inp && document.activeElement !== inp) inp.value = remoto;
+          }
+        } catch (e) {
+          console.error('Dado inválido na nuvem em ' + k, e);
+        }
+      });
+
+      const primeira = !nuvem.recebeuPrimeiro;
+      nuvem.recebeuPrimeiro = true;
+
+      if (mudou) {
+        carregarEstadoTurno(window.turnoAtual);
+        atualizarStatusPlanilha();
+        window.renderEstruturas();
+        if (abaAtual === 'dinamica') renderTabelaDinamica();
+        buscarColaborador();
+        if (window.agendarAutoSave) window.agendarAutoSave(); // atualiza a cópia local
+      }
+      window.atualizarStatusNuvem();
+      if (primeira) liberarFilaNuvem();
+    }
+
+    function marcarNuvemIndisponivel(motivo) {
+      if (nuvem.indisponivel) return;
+      console.warn('Nuvem indisponível:', motivo);
+      nuvem.indisponivel = true;
+      window.atualizarStatusNuvem();
+      liberarFilaNuvem();
+    }
+
+    function conectarNuvem() {
+      if (nuvem.iniciada) return;
+      if (!window.fb) {
+        // O SDK pode ainda estar carregando; espera alguns segundos
+        window.addEventListener('firebase-pronto', conectarNuvem, { once: true });
+        setTimeout(() => { if (!window.fb) marcarNuvemIndisponivel('SDK do Firebase não carregou'); }, 10000);
+        return;
+      }
+      nuvem.iniciada = true;
+      const { db, ref, onValue, auth, onAuthStateChanged } = window.fb;
+
+      onValue(ref(db, '.info/connected'), snap => {
+        nuvem.conectada = snap.val() === true;
+        window.atualizarStatusNuvem();
+      });
+
+      onValue(ref(db, CAMINHO_NUVEM),
+        snap => aplicarDadosNuvem(snap.val()),
+        err => marcarNuvemIndisponivel('Sem permissão de leitura: ' + (err && err.message))
+      );
+
+      onAuthStateChanged(auth, tratarUsuarioFirebase);
+      window.atualizarStatusNuvem();
+    }
+
+    /* ---------- LOGIN DE ADMIN (FIREBASE AUTH) ---------- */
+    async function tratarUsuarioFirebase(user) {
+      if (!user) {
+        modoEspectadorUI();
+        return;
+      }
+      // Confere se o usuário está liberado como admin no banco (nó "admins/<UID>": true)
+      let liberado = false;
+      try {
+        const snap = await window.fb.get(window.fb.ref(window.fb.db, `admins/${user.uid}`));
+        liberado = snap.val() === true;
+      } catch (e) {
+        console.error('Erro ao verificar admin', e);
+      }
+      if (!liberado) {
+        alert(`O usuário ${user.email} entrou, mas não está liberado como admin.\n\nNo Firebase, em Realtime Database > Dados, crie "admins" > "${user.uid}" com o valor true.`);
+        window.fb.signOut(window.fb.auth);
+        return;
+      }
+      modoAdminUI(user.email);
+    }
+
+    async function entrarComoAdmin() {
+      const emailEl = document.getElementById('adminEmailInput');
+      const senhaEl = document.getElementById('adminPasswordInput');
+      const email = emailEl.value.trim();
+      const senha = senhaEl.value;
+      if (!email || !senha) { alert('Informe o e-mail e a senha do admin.'); return; }
+      if (!window.fb) { alert('Não foi possível conectar ao Firebase. Verifique a internet e recarregue a página.'); return; }
+
+      const btn = document.getElementById('btnEntrarAdmin');
+      btn.disabled = true; btn.textContent = 'Entrando...';
+      try {
+        await window.fb.signInWithEmailAndPassword(window.fb.auth, email, senha);
+        senhaEl.value = '';
+      } catch (e) {
+        const codigo = (e && e.code) || '';
+        if (['auth/invalid-credential', 'auth/wrong-password', 'auth/user-not-found', 'auth/invalid-email'].includes(codigo)) {
+          alert('E-mail ou senha incorretos.');
+        } else if (codigo === 'auth/too-many-requests') {
+          alert('Muitas tentativas. Aguarde alguns minutos e tente de novo.');
+        } else if (codigo === 'auth/operation-not-allowed') {
+          alert('O login por e-mail/senha não está ativado no Firebase (Authentication > Sign-in method).');
+        } else {
+          alert('Não foi possível entrar: ' + (e && e.message ? e.message : e));
+        }
+      } finally {
+        btn.disabled = false; btn.textContent = 'Entrar como Admin';
       }
     }
 
     function sairParaEspectador() {
+      if (window.fb) window.fb.signOut(window.fb.auth);
+      else modoEspectadorUI();
+    }
+
+    function modoAdminUI(email) {
+      window.ehAdminNuvem = true;
+      window.emailAdmin = email || '';
+      window.perfilAtual = 'admin';
+      document.body.classList.remove('is-viewer');
+      document.getElementById('roleBadge').className = 'badge-role role-admin';
+      document.getElementById('roleBadge').innerHTML = '⚡ Administrador';
+      document.getElementById('roleDesc').innerHTML = '(Edição Habilitada)';
+      document.getElementById('loginForm').style.display = 'none';
+      document.getElementById('btnLogout').style.display = 'inline-block';
+      const lbl = document.getElementById('adminEmailLabel');
+      lbl.textContent = email || '';
+      lbl.style.display = email ? 'inline' : 'none';
+      aplicarPermissoesPerfil();
+      atualizarNaoEscalados();
+
+      // Depois de carregar a nuvem: envia a escala se a nuvem estiver vazia e atualiza as folgas
+      quandoNuvemPronta(() => {
+        if (nuvem.vazia) window.salvarNaNuvem();
+        if ((window.linkPlanilha || LINK_PLANILHA_PADRAO).trim()) {
+          atualizarPlanilha(true);
+          iniciarAutoAtualizacaoPlanilha();
+        }
+      });
+    }
+
+    function modoEspectadorUI() {
+      window.ehAdminNuvem = false;
+      window.emailAdmin = '';
       window.perfilAtual = 'espectador';
       document.body.classList.add('is-viewer');
       document.getElementById('roleBadge').className = 'badge-role role-viewer';
@@ -1055,7 +1327,9 @@
       document.getElementById('roleDesc').innerHTML = '(Apenas visualização)';
       document.getElementById('loginForm').style.display = 'flex';
       document.getElementById('btnLogout').style.display = 'none';
+      document.getElementById('adminEmailLabel').style.display = 'none';
       aplicarPermissoesPerfil();
+      atualizarNaoEscalados();
     }
 
     function aplicarPermissoesPerfil() {
@@ -1134,21 +1408,40 @@
     };
 
     // Monta a lista do dia: disponíveis primeiro, depois quem está de folga/ausente (bloqueado)
-    function buildOptionsHTML(dia) {
+    // escaladosNoDia: nomes já escalados em outro posto do mesmo dia (não aparecem na lista)
+    // valorAtual: nome escolhido neste próprio campo (sempre aparece)
+    function buildOptionsHTML(dia, escaladosNoDia, valorAtual) {
       let disponiveis = '';
       let bloqueados = '';
       for (let i = 0; i < window.colaboradores.length; i++) {
         const nomeCompleto = window.colaboradores[i];
+        const ehAtual = (nomeCompleto === valorAtual);
+        if (escaladosNoDia && escaladosNoDia.has(nomeCompleto) && !ehAtual) continue;
+        const sel = ehAtual ? ' selected' : '';
         const nomeAbreviado = formatarNomeAbreviado(nomeCompleto);
         const st = dia ? statusColaborador(nomeCompleto, dia) : { tipo: 'sem_dado' };
         if (st.tipo === 'folga' || st.tipo === 'ausente') {
           const icone = st.tipo === 'folga' ? '🛌' : '🚫';
-          bloqueados += `<option value="${nomeCompleto}" disabled>${icone} ${nomeAbreviado} (${st.codigo})</option>`;
+          bloqueados += `<option value="${nomeCompleto}" disabled${sel}>${icone} ${nomeAbreviado} (${st.codigo})</option>`;
         } else {
-          disponiveis += `<option value="${nomeCompleto}">${nomeAbreviado}</option>`;
+          disponiveis += `<option value="${nomeCompleto}"${sel}>${nomeAbreviado}</option>`;
         }
       }
       return '<option value="">- Selecione -</option>' + disponiveis + bloqueados;
+    }
+
+    // REGRA: operador já escalado no dia não aparece de novo nas listas dos outros postos
+    // daquele dia (vale por setor: Recebimento e Double Check separados)
+    function filtrarOpcoesDoDia(tipo, dia) {
+      const dados = ((tipo === 'rec') ? window.escalaRecebimento : window.escalaDoubleCheck)[dia] || {};
+      const escalados = new Set(Object.values(dados).filter(n => n && n.trim() !== ''));
+      const container = document.getElementById(tipo === 'rec' ? 'tab-recebimento' : 'tab-doublecheck');
+      container.querySelectorAll(`select[id^="${tipo}_${dia}_"]`).forEach(sel => {
+        const key = sel.id.substring(`${tipo}_${dia}_`.length);
+        const valorAtual = dados[key] || '';
+        sel.innerHTML = buildOptionsHTML(dia, escalados, valorAtual);
+        sel.value = valorAtual;
+      });
     }
 
     function buildLetterOptionsHTML(letraSelecionada) {
@@ -1208,7 +1501,7 @@
               </div>
             `;
           }
-          contentHtml += `<div class="extra-card" data-extra="${ext.id}"><div class="card-title">${ext.label} (${ext.qtd})</div>${slotsExtraHtml}</div>`;
+          contentHtml += `<div class="extra-card"><div class="card-title">${ext.label} (${ext.qtd})</div>${slotsExtraHtml}</div>`;
         });
 
         // CARD CAPACIDADE PRINCIPAL MODIFICADO (40 PESSOAS: 10 COLUNAS x 4 LINHAS)
@@ -1274,6 +1567,7 @@
           const el = document.getElementById(`rec_${dia}_${key}`);
           if (el) el.value = window.escalaRecebimento[dia][key];
         });
+        filtrarOpcoesDoDia('rec', dia);
       });
     }
 
@@ -1291,38 +1585,22 @@
         const optionsHtml = buildOptionsHTML(dia);
         let contentHtml = '';
 
-        for (let m = 1; m <= 14; m += 2) {
-          const mTop = m;
-          const mBottom = m + 1;
-
-          const isTopTratativa = (mTop === 7);
-          const isBottomTratativa = (mBottom === 7);
-
-          const titleTop = isTopTratativa ? 'MESA 7 (TRATATIVA)' : `MESA ${mTop}`;
-          const titleBottom = isBottomTratativa ? 'MESA 7 (TRATATIVA)' : `MESA ${mBottom}`;
-
-          const funcTop = isTopTratativa ? 'tratativa_pacotes' : 'mesa_dc';
-          const funcBottom = isBottomTratativa ? 'tratativa_pacotes' : 'mesa_dc';
-
-          contentHtml += `
-            <div class="dc-pair-card">
-              <div class="dc-single-mesa ${isTopTratativa ? 'mesa-tratativa' : ''}">
-                <div class="card-title" ${isTopTratativa ? 'style="color:#f59e0b;"' : ''}>${titleTop}</div>
+        // 24 MESAS NORMAIS, AGRUPADAS DE 2 EM 2 (MESA 1/2, 3/4 ... 23/24)
+        for (let m = 1; m <= TOTAL_MESAS_DC; m += 2) {
+          let paresHtml = '';
+          [m, m + 1].forEach(numMesa => {
+            if (numMesa > TOTAL_MESAS_DC) return;
+            paresHtml += `
+              <div class="dc-single-mesa">
+                <div class="card-title">MESA ${numMesa}</div>
                 <div class="slot">
-                  <label>${isTopTratativa ? 'Tratativa' : 'Operador 1'}</label>
-                  <select data-funcao="${funcTop}" id="dc_${dia}_dc_mesa_${mTop}_1" onchange="salvarSelecao('dc', '${dia}', 'dc_mesa_${mTop}_1', this.value)">${optionsHtml}</select>
+                  <label>Operador 1</label>
+                  <select data-funcao="mesa_dc" id="dc_${dia}_dc_mesa_${numMesa}_1" onchange="salvarSelecao('dc', '${dia}', 'dc_mesa_${numMesa}_1', this.value)">${optionsHtml}</select>
                 </div>
               </div>
-
-              <div class="dc-single-mesa ${isBottomTratativa ? 'mesa-tratativa' : ''}">
-                <div class="card-title" ${isBottomTratativa ? 'style="color:#f59e0b;"' : ''}>${titleBottom}</div>
-                <div class="slot">
-                  <label>${isBottomTratativa ? 'Tratativa' : 'Operador 1'}</label>
-                  <select data-funcao="${funcBottom}" id="dc_${dia}_dc_mesa_${mBottom}_1" onchange="salvarSelecao('dc', '${dia}', 'dc_mesa_${mBottom}_1', this.value)">${optionsHtml}</select>
-                </div>
-              </div>
-            </div>
-          `;
+            `;
+          });
+          contentHtml += `<div class="dc-pair-card">${paresHtml}</div>`;
         }
 
         funcoesDC.forEach(ext => {
@@ -1362,6 +1640,7 @@
           const el = document.getElementById(`dc_${dia}_${key}`);
           if (el) el.value = window.escalaDoubleCheck[dia][key];
         });
+        filtrarOpcoesDoDia('dc', dia);
       });
     }
 
@@ -1399,6 +1678,7 @@
       } else {
         window.escalaDoubleCheck[dia][key] = val;
       }
+      filtrarOpcoesDoDia(tipo, dia);
       atualizarNaoEscalados();
       validarDuplicidades();
 
@@ -1421,7 +1701,6 @@
           ]
         : [
             { id: 'mesa_dc', label: 'Mesas DC' },
-            { id: 'tratativa_pacotes', label: 'Tratativa (Mesa 7)' },
             { id: 'puxar_gaiolas', label: 'Puxar Gaiolas' },
             { id: 'pacotinhos', label: 'Pacotinhos' }
           ];
@@ -1445,7 +1724,6 @@
             else if (key.includes('gaioleiro')) funcId = 'gaioleiro';
             else if (key.includes('volumosos')) funcId = 'volumosos';
             else if (key.includes('handover')) funcId = 'handover';
-            else if (key.includes('dc_mesa_7_1')) funcId = 'tratativa_pacotes';
             else if (key.includes('dc_mesa')) funcId = 'mesa_dc';
             else if (key.includes('puxar_gaiolas')) funcId = 'puxar_gaiolas';
             else if (key.includes('pacotinhos')) funcId = 'pacotinhos';
@@ -1664,8 +1942,8 @@
           const jaAlocadosNoDia = new Set();
           const candidatosDoDia = [...window.colaboradores].sort(() => Math.random() - 0.5);
 
-          for (let m = 1; m <= 14; m++) {
-            const funcTarget = (m === 7) ? 'tratativa_pacotes' : 'mesa_dc';
+          for (let m = 1; m <= TOTAL_MESAS_DC; m++) {
+            const funcTarget = 'mesa_dc';
             const escolhido = obterProximoDisponivel(candidatosDoDia, jaAlocadosNoDia, usoFuncaoSemana, funcTarget, dia, 3);
             if (escolhido) {
               window.escalaDoubleCheck[dia][`dc_mesa_${m}_1`] = escolhido;
@@ -1706,7 +1984,7 @@
 
         window.escalaDoubleCheck[dia] = {};
         
-        for (let m = 1; m <= 14; m++) {
+        for (let m = 1; m <= TOTAL_MESAS_DC; m++) {
           if (idx < embaralhados.length) window.escalaDoubleCheck[dia][`dc_mesa_${m}_1`] = embaralhados[idx++];
         }
 
@@ -1997,9 +2275,6 @@
           }
         });
       });
-
-      // Na imagem não mostra o CAR DE GAIOLERO; assim o card de VOLUMOSOS sobe para o lado do HANDOVER
-      captureArea.querySelectorAll('.extra-card[data-extra="gaioleiro"]').forEach(c => c.remove());
 
       captureArea.querySelectorAll('button').forEach(b => b.remove());
       captureArea.querySelectorAll('.day-block').forEach(b => b.classList.remove('day-hidden'));
