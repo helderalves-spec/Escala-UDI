@@ -261,7 +261,6 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
     import { getDatabase, ref, onValue, update, get, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js";
-    import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyAlw_QBwvkTkWKG8JLA1UKlpnienQeu5XA",
@@ -280,9 +279,7 @@
     // Ferramentas do Firebase usadas pelo sistema (banco em tempo real + login)
     window.fb = {
       db: getDatabase(app),
-      auth: getAuth(app),
-      ref, onValue, update, get, serverTimestamp,
-      signInWithEmailAndPassword, signOut, onAuthStateChanged
+      ref, onValue, update, get, serverTimestamp
     };
     window.dispatchEvent(new Event('firebase-pronto'));
   </script>
@@ -310,8 +307,7 @@
     </div>
     <div class="login-box">
       <div id="loginForm" style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
-        <input type="email" id="adminEmailInput" class="login-input" style="width: 190px;" placeholder="E-mail do Admin" autocomplete="username">
-        <input type="password" id="adminPasswordInput" class="login-input" placeholder="Senha" autocomplete="current-password" onkeydown="if(event.key==='Enter') entrarComoAdmin()">
+        <input type="password" id="adminPasswordInput" class="login-input" placeholder="Senha Admin" onkeydown="if(event.key==='Enter') entrarComoAdmin()">
         <button class="btn btn-blue-solid" id="btnEntrarAdmin" onclick="entrarComoAdmin()">Entrar como Admin</button>
       </div>
       <span id="adminEmailLabel" style="font-size: 11px; color: #6ee7b7; font-weight: 700; display: none;"></span>
@@ -638,6 +634,8 @@
 
     let abaAtual = 'recebimento';
     window.perfilAtual = 'espectador';
+    // SENHA DO MODO ADMIN (troque aqui se quiser outra)
+    const SENHA_ADMIN = "1013";
 
     const ALFABETO = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 
@@ -1055,8 +1053,7 @@
        NUVEM (FIREBASE): escala compartilhada em tempo real
        ============================================================
        - Todos que abrem o sistema veem a mesma escala, atualizada na hora.
-       - Só quem entra como Admin (e-mail cadastrado no Firebase e liberado
-         no nó "admins" do banco) consegue alterar.
+       - Só quem entra como Admin (senha SENHA_ADMIN) consegue alterar pela tela.
        - Cada computador guarda uma cópia local (IndexedDB) para abrir rápido
          e continuar funcionando se a internet cair.                      */
     const CAMINHO_NUVEM = 'escalaMarceloHelder';
@@ -1093,8 +1090,12 @@
       } else if (!nuvem.recebeuPrimeiro) {
         atualizarStatus('⏳ Carregando da nuvem...', 'status-saving');
       } else {
-        const quem = nuvem.ultimaAlteracao && nuvem.ultimaAlteracao.por ? ` · última alteração: ${nuvem.ultimaAlteracao.por}` : '';
-        atualizarStatus(`☁️ Sincronizado na nuvem${quem}`, 'status-saved');
+        let quando = '';
+        const em = nuvem.ultimaAlteracao && nuvem.ultimaAlteracao.em;
+        if (typeof em === 'number') {
+          quando = ' · última alteração ' + new Date(em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+        }
+        atualizarStatus(`☁️ Sincronizado na nuvem${quando}`, 'status-saved');
       }
     };
 
@@ -1125,7 +1126,7 @@
       PARTES_NUVEM.forEach(k => { if (locais[k] !== nuvem.ultimo[k]) mudancas[k] = locais[k]; });
       if (!Object.keys(mudancas).length) return false;
 
-      mudancas['meta'] = { por: window.emailAdmin || 'admin', em: window.fb.serverTimestamp() };
+      mudancas['meta'] = { em: window.fb.serverTimestamp() };
       Object.keys(mudancas).forEach(k => { if (k !== 'meta') nuvem.ultimo[k] = mudancas[k]; });
       nuvem.vazia = false;
 
@@ -1138,7 +1139,7 @@
           Object.keys(mudancas).forEach(k => { if (k !== 'meta') delete nuvem.ultimo[k]; });
           if (String(err && (err.code || err.message)).toUpperCase().includes('PERMISSION')) {
             atualizarStatus('🔴 Sem permissão para salvar na nuvem', 'status-erro');
-            alert('O Firebase recusou a gravação. Verifique se o seu usuário está liberado no nó "admins" e se as regras do banco foram publicadas.');
+            alert('O Firebase recusou a gravação. No console do Firebase, em Realtime Database > Regras, libere a gravação em "escalaMarceloHelder".');
           } else {
             atualizarStatus('🔴 Erro ao salvar na nuvem (salvo neste computador)', 'status-erro');
           }
@@ -1219,7 +1220,7 @@
         return;
       }
       nuvem.iniciada = true;
-      const { db, ref, onValue, auth, onAuthStateChanged } = window.fb;
+      const { db, ref, onValue } = window.fb;
 
       onValue(ref(db, '.info/connected'), snap => {
         nuvem.conectada = snap.val() === true;
@@ -1231,64 +1232,22 @@
         err => marcarNuvemIndisponivel('Sem permissão de leitura: ' + (err && err.message))
       );
 
-      onAuthStateChanged(auth, tratarUsuarioFirebase);
       window.atualizarStatusNuvem();
     }
 
-    /* ---------- LOGIN DE ADMIN (FIREBASE AUTH) ---------- */
-    async function tratarUsuarioFirebase(user) {
-      if (!user) {
-        modoEspectadorUI();
-        return;
-      }
-      // Confere se o usuário está liberado como admin no banco (nó "admins/<UID>": true)
-      let liberado = false;
-      try {
-        const snap = await window.fb.get(window.fb.ref(window.fb.db, `admins/${user.uid}`));
-        liberado = snap.val() === true;
-      } catch (e) {
-        console.error('Erro ao verificar admin', e);
-      }
-      if (!liberado) {
-        alert(`O usuário ${user.email} entrou, mas não está liberado como admin.\n\nNo Firebase, em Realtime Database > Dados, crie "admins" > "${user.uid}" com o valor true.`);
-        window.fb.signOut(window.fb.auth);
-        return;
-      }
-      modoAdminUI(user.email);
-    }
-
-    async function entrarComoAdmin() {
-      const emailEl = document.getElementById('adminEmailInput');
-      const senhaEl = document.getElementById('adminPasswordInput');
-      const email = emailEl.value.trim();
-      const senha = senhaEl.value;
-      if (!email || !senha) { alert('Informe o e-mail e a senha do admin.'); return; }
-      if (!window.fb) { alert('Não foi possível conectar ao Firebase. Verifique a internet e recarregue a página.'); return; }
-
-      const btn = document.getElementById('btnEntrarAdmin');
-      btn.disabled = true; btn.textContent = 'Entrando...';
-      try {
-        await window.fb.signInWithEmailAndPassword(window.fb.auth, email, senha);
-        senhaEl.value = '';
-      } catch (e) {
-        const codigo = (e && e.code) || '';
-        if (['auth/invalid-credential', 'auth/wrong-password', 'auth/user-not-found', 'auth/invalid-email'].includes(codigo)) {
-          alert('E-mail ou senha incorretos.');
-        } else if (codigo === 'auth/too-many-requests') {
-          alert('Muitas tentativas. Aguarde alguns minutos e tente de novo.');
-        } else if (codigo === 'auth/operation-not-allowed') {
-          alert('O login por e-mail/senha não está ativado no Firebase (Authentication > Sign-in method).');
-        } else {
-          alert('Não foi possível entrar: ' + (e && e.message ? e.message : e));
-        }
-      } finally {
-        btn.disabled = false; btn.textContent = 'Entrar como Admin';
+    /* ---------- LOGIN DE ADMIN (SENHA SIMPLES) ---------- */
+    function entrarComoAdmin() {
+      const input = document.getElementById('adminPasswordInput');
+      if (input.value === SENHA_ADMIN) {
+        input.value = '';
+        modoAdminUI('');
+      } else {
+        alert('Senha incorreta!');
       }
     }
 
     function sairParaEspectador() {
-      if (window.fb) window.fb.signOut(window.fb.auth);
-      else modoEspectadorUI();
+      modoEspectadorUI();
     }
 
     function modoAdminUI(email) {
