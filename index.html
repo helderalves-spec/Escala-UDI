@@ -336,7 +336,7 @@
       <button class="btn btn-outline-yellow btn-sm admin-only" onclick="atualizarPlanilha(false)">🔄 Atualizar Folgas</button>
     </div>
     <div class="planilha-group admin-only">
-      <input type="text" id="linkPlanilhaInput" class="link-input" placeholder="Cole aqui o link CSV publicado da planilha">
+      <input type="text" id="linkPlanilhaInput" class="link-input" placeholder="Cole aqui o link da planilha do Google">
       <button class="btn btn-blue-solid btn-sm" onclick="salvarLinkPlanilha()">Salvar link</button>
       <label class="btn btn-outline-purple btn-sm" style="cursor:pointer;">📂 Importar CSV
         <input type="file" accept=".csv,text/csv" style="display:none;" onchange="importarCSVArquivo(this)">
@@ -708,8 +708,8 @@
     const MAPA_LIDER_TURNO = { 'MARCELO': 'AM', 'HELDER': 'PM' };
     const TURNOS = ['AM', 'PM'];
 
-    // Atualiza as folgas automaticamente a cada 10 minutos (se houver link)
-    const INTERVALO_ATUALIZACAO_MS = 10 * 60 * 1000;
+    // Atualiza as folgas automaticamente a cada 2 minutos (se houver link)
+    const INTERVALO_ATUALIZACAO_MS = 2 * 60 * 1000;
 
     window.turnoAtual = 'AM';
     window.dadosTurnos = {};
@@ -941,26 +941,73 @@
       el.textContent = `🟢 Planilha: ${qtd} pessoas · ${fmtCurta(p.datas[0])} a ${fmtCurta(p.datas[p.datas.length - 1])} · atualizada ${hora}`;
     }
 
+    /* ---------- LINK DA PLANILHA ----------
+       Aceita qualquer link do Google Planilhas e transforma no endereço de leitura (CSV):
+       - link de edição:  .../spreadsheets/d/<ID>/edit#gid=0
+       - link publicado:  .../spreadsheets/d/e/<CHAVE>/pubhtml  ou  .../pub?output=csv
+       - qualquer outro link que já devolva CSV                                         */
+    function urlsLeituraPlanilha(link) {
+      link = (link || '').trim();
+      const gidMatch = link.match(/[#?&]gid=(\d+)/);
+      const gid = gidMatch ? gidMatch[1] : '0';
+
+      // Planilha publicada na Web (d/e/2PACX...)
+      let m = link.match(/docs\.google\.com\/spreadsheets\/d\/e\/([a-zA-Z0-9_-]+)/);
+      if (m) {
+        return [`https://docs.google.com/spreadsheets/d/e/${m[1]}/pub?output=csv&gid=${gid}&single=true`];
+      }
+      // Link normal da planilha (edição/visualização)
+      m = link.match(/docs\.google\.com\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+      if (m) {
+        const id = m[1];
+        return [
+          `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:csv&headers=1&gid=${gid}`,
+          `https://docs.google.com/spreadsheets/d/${id}/export?format=csv&gid=${gid}`
+        ];
+      }
+      return [link];
+    }
+
+    const MSG_COMPARTILHAR = 'No Google Planilhas, clique em "Compartilhar" > em "Acesso geral" escolha "Qualquer pessoa com o link" como "Leitor" ' +
+      '(ou use Arquivo > Compartilhar > Publicar na Web). Se a planilha original precisa ficar privada, faça isso numa planilha espelho com IMPORTRANGE.';
+
+    async function baixarCSVPlanilha(link) {
+      const tentativas = urlsLeituraPlanilha(link);
+      let ultimoErro = null;
+      for (const base of tentativas) {
+        try {
+          const url = base + (base.includes('?') ? '&' : '?') + '_t=' + Date.now();
+          const resp = await fetch(url, { cache: 'no-store' });
+          if (!resp.ok) throw new Error(`a planilha respondeu com erro ${resp.status}`);
+          const texto = await resp.text();
+          if (texto.trim().startsWith('<')) throw new Error('a planilha devolveu uma página de login (sem permissão de leitura)');
+          return processarCSV(texto); // confere se tem as colunas certas
+        } catch (e) {
+          console.warn('Falha ao ler planilha em', base, e);
+          ultimoErro = e;
+        }
+      }
+      const msg = String(ultimoErro && ultimoErro.message || ultimoErro);
+      if (/failed to fetch|networkerror|load failed|login|permiss/i.test(msg)) {
+        throw new Error('O sistema não tem permissão para ler a planilha. ' + MSG_COMPARTILHAR);
+      }
+      throw ultimoErro;
+    }
+
     async function atualizarPlanilha(silencioso) {
       // Só o admin baixa a planilha; os espectadores recebem as folgas pela nuvem
       if (window.perfilAtual !== 'admin') return;
       const link = (window.linkPlanilha || LINK_PLANILHA_PADRAO || '').trim();
       if (!link) {
-        if (!silencioso) alert('Nenhum link de planilha configurado. Entre como Admin, cole o link CSV publicado e clique em "Salvar link" (ou use "Importar CSV").');
+        if (!silencioso) alert('Nenhum link de planilha configurado. Entre como Admin, cole o link da planilha e clique em "Salvar link" (ou use "Importar CSV").');
         return;
       }
       const el = document.getElementById('planilhaStatus');
       el.className = 'status-badge status-saving';
       el.textContent = '🟡 Baixando planilha...';
       try {
-        const url = link + (link.includes('?') ? '&' : '?') + '_t=' + Date.now();
-        const resp = await fetch(url, { cache: 'no-store' });
-        if (!resp.ok) throw new Error(`O link respondeu com erro ${resp.status}.`);
-        const texto = await resp.text();
-        if (texto.trim().startsWith('<')) {
-          throw new Error('O link não devolveu um CSV. Use Arquivo > Compartilhar > Publicar na Web, escolha o formato "Valores separados por vírgula (.csv)" e copie esse link.');
-        }
-        aplicarDadosPlanilha(processarCSV(texto));
+        const dados = await baixarCSVPlanilha(link);
+        aplicarDadosPlanilha(dados);
       } catch (e) {
         console.error(e);
         atualizarStatusPlanilha(e.message || String(e));
