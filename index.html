@@ -938,7 +938,8 @@
       const qtd = Object.keys(p.pessoas).length;
       const hora = new Date(p.atualizadoEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
       el.className = 'status-badge status-saved';
-      el.textContent = `🟢 Planilha: ${qtd} pessoas · ${fmtCurta(p.datas[0])} a ${fmtCurta(p.datas[p.datas.length - 1])} · atualizada ${hora}`;
+      const auto = p.fonte === 'auto' ? ' (automática)' : '';
+      el.textContent = `🟢 Planilha${auto}: ${qtd} pessoas · ${fmtCurta(p.datas[0])} a ${fmtCurta(p.datas[p.datas.length - 1])} · atualizada ${hora}`;
     }
 
     /* ---------- LINK DA PLANILHA ----------
@@ -997,6 +998,14 @@
     async function atualizarPlanilha(silencioso) {
       // Só o admin baixa a planilha; os espectadores recebem as folgas pela nuvem
       if (window.perfilAtual !== 'admin') return;
+      if (typeof nuvem !== 'undefined' && nuvem.temPlanilhaAuto) {
+        if (!silencioso) {
+          const p = window.planilhaEscala;
+          const hora = p ? new Date(p.atualizadoEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-';
+          alert(`As folgas já chegam automaticamente da planilha do Google (última atualização: ${hora}). Não é preciso atualizar à mão.`);
+        }
+        return;
+      }
       const link = (window.linkPlanilha || LINK_PLANILHA_PADRAO || '').trim();
       if (!link) {
         if (!silencioso) alert('Nenhum link de planilha configurado. Entre como Admin, cole o link da planilha e clique em "Salvar link" (ou use "Importar CSV").');
@@ -1204,6 +1213,7 @@
         nuvem.recebeuPrimeiro = true;
         window.atualizarStatusNuvem();
         if (primeira) liberarFilaNuvem();
+        processarPlanilhaAutomatica(val);
         // Nuvem vazia: o primeiro admin que entrar envia a escala deste computador
         window.salvarNaNuvem();
         return;
@@ -1246,8 +1256,34 @@
         buscarColaborador();
         if (window.agendarAutoSave) window.agendarAutoSave(); // atualiza a cópia local
       }
+      processarPlanilhaAutomatica(val);
       window.atualizarStatusNuvem();
       if (primeira) liberarFilaNuvem();
+    }
+
+    /* ---------- PLANILHA AUTOMÁTICA (enviada pelo script da própria planilha) ----------
+       O script do Google Planilhas grava em "escalaMarceloHelder/planilhaCSV" o texto
+       { csv, em } sempre que a planilha muda. Aqui o sistema lê e aplica as folgas.
+       Assim a planilha pode continuar "Restrita".                                      */
+    function processarPlanilhaAutomatica(val) {
+      const pc = val && val.planilhaCSV;
+      if (!pc || typeof pc.csv !== 'string' || !pc.csv.trim()) {
+        nuvem.temPlanilhaAuto = false;
+        return;
+      }
+      nuvem.temPlanilhaAuto = true;
+      const quando = new Date(typeof pc.em === 'number' ? pc.em : Date.now()).toISOString();
+      const atual = window.planilhaEscala;
+      if (atual && atual.fonte === 'auto' && atual.atualizadoEm === quando) return; // já aplicada
+      try {
+        const dados = processarCSV(pc.csv);
+        dados.atualizadoEm = quando;
+        dados.fonte = 'auto';
+        aplicarDadosPlanilha(dados);
+      } catch (e) {
+        console.error('Planilha automática inválida', e);
+        atualizarStatusPlanilha('A planilha enviada pelo script não pôde ser lida: ' + e.message);
+      }
     }
 
     function marcarNuvemIndisponivel(motivo) {
