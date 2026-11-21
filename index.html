@@ -229,6 +229,9 @@
     .turno-nav { display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
     .turno-btn { flex: 1; min-width: 200px; background: #11131f; color: #94a3b8; border: 2px solid #262a40; padding: 10px 16px; border-radius: 8px; font-weight: 900; font-size: 14px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 2px; transition: all 0.2s; }
     .turno-btn small { font-size: 10px; font-weight: 700; opacity: 0.85; }
+    .lider-linha { display: flex; align-items: center; gap: 6px; }
+    .edit-lider { font-size: 9.5px; font-weight: 800; padding: 1px 6px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.35); background: rgba(0,0,0,0.25); color: #fff; cursor: pointer; }
+    .edit-lider:hover { background: rgba(255,255,255,0.2); }
     .turno-btn.am.active { background: #b45309; border-color: #f59e0b; color: #fff; box-shadow: 0 0 12px rgba(245, 158, 11, 0.4); }
     .turno-btn.pm.active { background: #4338ca; border-color: #818cf8; color: #fff; box-shadow: 0 0 12px rgba(129, 140, 248, 0.4); }
 
@@ -292,6 +295,7 @@
     <div class="action-buttons">
       <span id="storageStatus" class="status-badge status-saving">⏳ Conectando à nuvem...</span>
       <button class="btn btn-outline-yellow admin-only" onclick="abrirModalSkills()">🎯 Skills / Competências</button>
+      <button class="btn btn-outline-blue admin-only" onclick="abrirModalLideres()">👔 Líderes / Regra do Turno</button>
       <button class="btn btn-outline-blue" onclick="abrirModalPrint()">📷 Imagem (.png HD)</button>
       <button class="btn btn-outline-purple admin-only" onclick="sortearSemana()">🎲 Sortear Escala</button>
       <button class="btn btn-outline-red admin-only" onclick="resetarSemanaAtual()">💥 Limpar Escala</button>
@@ -317,8 +321,8 @@
 
   <!-- ABAS DE TURNO: AM (LÍDER MARCELO) / PM (LÍDER HELDER) -->
   <div class="turno-nav">
-    <button id="turnoBtnAM" class="turno-btn am active" onclick="trocarTurno('AM')">☀️ ESCALA AM <small>Líder: MARCELO</small></button>
-    <button id="turnoBtnPM" class="turno-btn pm" onclick="trocarTurno('PM')">🌙 ESCALA PM <small>Líder: HELDER</small></button>
+    <button id="turnoBtnAM" class="turno-btn am active" onclick="trocarTurno('AM')">☀️ ESCALA AM <span class="lider-linha"><small id="liderLabelAM">Líder: MARCELO</small><span class="edit-lider admin-only" title="Trocar o líder do AM" onclick="event.stopPropagation(); editarLiderRapido('AM')">✏️ trocar</span></span></button>
+    <button id="turnoBtnPM" class="turno-btn pm" onclick="trocarTurno('PM')">🌙 ESCALA PM <span class="lider-linha"><small id="liderLabelPM">Líder: HELDER</small><span class="edit-lider admin-only" title="Trocar o líder do PM" onclick="event.stopPropagation(); editarLiderRapido('PM')">✏️ trocar</span></span></button>
   </div>
 
   <!-- SEMANA + PLANILHA DE FOLGAS -->
@@ -454,6 +458,47 @@
     </div>
   </div>
 
+  <!-- MODAL: LÍDERES / REGRA DO TURNO -->
+  <div class="modal-overlay" id="modalLideres">
+    <div class="modal-card" style="max-width: 620px;">
+      <div class="modal-header">
+        <h2>👔 Líderes e Regra de Turno</h2>
+        <span class="close-modal" onclick="fecharModais()">✕</span>
+      </div>
+
+      <label style="font-size: 11px; color: #94a3b8; font-weight: bold;">Como o sistema decide quem é do AM e quem é do PM:</label>
+      <div style="display: flex; flex-direction: column; gap: 6px; margin: 6px 0 14px 0;">
+        <label class="skill-item" style="font-size: 11px;">
+          <input type="radio" name="modoLider" value="planilha" onchange="atualizarAjudaModoLider()">
+          <span><b>Automático pela planilha</b>: lê a coluna "Líder" e coloca cada pessoa no turno do líder dela.</span>
+        </label>
+        <label class="skill-item" style="font-size: 11px;">
+          <input type="radio" name="modoLider" value="manual" onchange="atualizarAjudaModoLider()">
+          <span><b>Manual</b>: ignora a coluna "Líder". Você digita o nome do líder só para exibir e cadastra os colaboradores de cada turno à mão (as folgas continuam vindo da planilha pelo nome).</span>
+        </label>
+      </div>
+
+      <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+        <div style="flex: 1; min-width: 220px;">
+          <label style="font-size: 11px; color: #f59e0b; font-weight: bold;">☀️ Líder(es) do AM</label>
+          <input type="text" id="liderInputAM" class="link-input" style="width: 100%; margin-top: 4px;" placeholder="Ex.: MARCELO">
+        </div>
+        <div style="flex: 1; min-width: 220px;">
+          <label style="font-size: 11px; color: #818cf8; font-weight: bold;">🌙 Líder(es) do PM</label>
+          <input type="text" id="liderInputPM" class="link-input" style="width: 100%; margin-top: 4px;" placeholder="Ex.: HELDER">
+        </div>
+      </div>
+      <p id="ajudaModoLider" style="font-size: 10px; color: #94a3b8; margin: 6px 0 0 0;"></p>
+
+      <div id="lideresPlanilhaBox" style="margin-top: 14px;"></div>
+
+      <div style="margin-top: 15px; display: flex; justify-content: flex-end; gap: 10px;">
+        <button class="btn btn-outline-red" onclick="fecharModais()">Cancelar</button>
+        <button class="btn btn-green-solid" onclick="salvarConfigLideres()">💾 Salvar</button>
+      </div>
+    </div>
+  </div>
+
   <!-- MODAL: GERAR PRINT (IMAGEM) -->
   <div class="modal-overlay" id="modalPrint">
     <div class="modal-card">
@@ -567,6 +612,7 @@
           await salvarNoIndexedDB('turnoAtual', window.turnoAtual || 'AM');
           await salvarNoIndexedDB('planilhaEscala', window.planilhaEscala || null);
           await salvarNoIndexedDB('linkPlanilha', window.linkPlanilha || '');
+          await salvarNoIndexedDB('configLideres', window.configLideres || null);
 
           if (window.salvarNaNuvem && window.salvarNaNuvem()) {
             // o status é atualizado quando a nuvem confirmar
@@ -616,6 +662,9 @@
 
         const link = await carregarDoIndexedDB('linkPlanilha');
         if (link) window.linkPlanilha = link;
+
+        const cfgLideres = await carregarDoIndexedDB('configLideres');
+        if (cfgLideres && cfgLideres.AM && cfgLideres.PM) window.configLideres = cfgLideres;
 
       } catch (err) {
         console.warn("Nenhum dado prévio encontrado no IndexedDB.", err);
@@ -704,9 +753,152 @@
     const CODIGOS_PRESENCA = ['', 'P'];
     // Qualquer outro código (F, FC, AL, FE, DV, DF, NC, BH...) = AUSENTE
 
-    // Coluna "Lider" -> Turno
-    const MAPA_LIDER_TURNO = { 'MARCELO': 'AM', 'HELDER': 'PM' };
+    // Coluna "Lider" -> Turno (configurável pelo Admin em "👔 Líderes / Regra do Turno")
+    // modo 'planilha': lê a coluna Líder da planilha e distribui por turno
+    // modo 'manual'  : ignora a coluna Líder; nomes servem só para exibição
     const TURNOS = ['AM', 'PM'];
+    window.configLideres = { modo: 'planilha', AM: ['MARCELO'], PM: ['HELDER'] };
+
+    // Descobre o turno a partir do nome do líder escrito na planilha
+    function turnoDoLider(lider) {
+      const cfg = window.configLideres;
+      if (!cfg || cfg.modo === 'manual') return null;
+      const l = normalizarNome(lider);
+      if (!l) return null;
+      for (const t of TURNOS) {
+        const nomes = (cfg[t] || []).map(normalizarNome).filter(Boolean);
+        // Aceita nome exato ou só o primeiro nome (ex.: "MARCELO" bate com "MARCELO SILVA")
+        if (nomes.some(n => l === n || l.split(' ')[0] === n || n.split(' ')[0] === l)) return t;
+      }
+      return null;
+    }
+
+    function textoLideres(t) {
+      const nomes = (window.configLideres[t] || []).filter(Boolean);
+      return nomes.length ? nomes.join(' / ') : '(não definido)';
+    }
+
+    function atualizarRotulosLideres() {
+      TURNOS.forEach(t => {
+        const el = document.getElementById(`liderLabel${t}`);
+        if (el) el.textContent = `Líder: ${textoLideres(t)}${window.configLideres.modo === 'manual' ? ' (manual)' : ''}`;
+      });
+    }
+
+    // Troca rápida do líder direto na aba AM/PM
+    function editarLiderRapido(turno) {
+      if (window.perfilAtual !== 'admin') return;
+      const cfg = window.configLideres;
+      const atual = (cfg[turno] || []).join(', ');
+      const resp = prompt(
+        `Nome do líder da ESCALA ${turno}:\n(para mais de um, separe por vírgula. Ex.: MARCELO, JOÃO)`,
+        atual
+      );
+      if (resp === null) return; // cancelou
+      const nomes = resp.split(',').map(n => normalizarNome(n)).filter(Boolean);
+      if (!nomes.length) { alert('Digite pelo menos um nome.'); return; }
+
+      const outro = turno === 'AM' ? 'PM' : 'AM';
+      const repetidos = nomes.filter(n => (cfg[outro] || []).includes(n));
+      if (repetidos.length && cfg.modo !== 'manual') {
+        if (!confirm(`${repetidos.join(', ')} hoje é líder do ${outro}. Mover para o ${turno}?`)) return;
+        cfg[outro] = (cfg[outro] || []).filter(n => !repetidos.includes(n));
+      }
+
+      cfg[turno] = nomes;
+      window.configLideres = { ...cfg };
+      atualizarRotulosLideres();
+
+      let add = 0;
+      if (cfg.modo !== 'manual' && window.planilhaEscala && window.planilhaEscala.pessoas) {
+        add = aplicarDadosPlanilha(window.planilhaEscala); // já salva (local + nuvem)
+      } else if (window.agendarAutoSave) {
+        window.agendarAutoSave();
+      }
+      if (add) alert(`Líder do ${turno} atualizado! ${add} colaborador(es) novo(s) incluído(s) pela nova regra.`);
+    }
+
+    function abrirModalLideres() {
+      if (window.perfilAtual !== 'admin') return;
+      const cfg = window.configLideres;
+      document.querySelectorAll('input[name="modoLider"]').forEach(r => r.checked = (r.value === cfg.modo));
+      TURNOS.forEach(t => { document.getElementById(`liderInput${t}`).value = (cfg[t] || []).join(', '); });
+      atualizarAjudaModoLider();
+      renderLideresDaPlanilha();
+      document.getElementById('modalLideres').classList.add('active');
+    }
+
+    function atualizarAjudaModoLider() {
+      const modo = (document.querySelector('input[name="modoLider"]:checked') || {}).value;
+      document.getElementById('ajudaModoLider').textContent = modo === 'manual'
+        ? 'Modo manual: o nome digitado aparece nas abas AM/PM, mas ninguém é incluído automaticamente pela coluna Líder.'
+        : 'Pode colocar mais de um nome separado por vírgula (ex.: "MARCELO, JOÃO" durante uma troca de liderança). Basta o primeiro nome.';
+    }
+
+    // Mostra os líderes que aparecem na planilha e para qual turno cada um vai
+    function renderLideresDaPlanilha() {
+      const box = document.getElementById('lideresPlanilhaBox');
+      const p = window.planilhaEscala;
+      if (!p || !p.pessoas) {
+        box.innerHTML = '<span style="font-size: 10px; color: #64748b;">Conecte a planilha para ver os líderes que aparecem nela.</span>';
+        return;
+      }
+      const cont = {};
+      Object.values(p.pessoas).forEach(pe => { const l = pe.lider || '(EM BRANCO)'; cont[l] = (cont[l] || 0) + 1; });
+      let html = '<label style="font-size: 11px; color: #94a3b8; font-weight: bold;">Líderes encontrados na planilha (clique para usar):</label><table class="custom-table" style="margin-top: 5px;"><thead><tr><th>Líder</th><th>Pessoas</th><th>Vai para</th><th></th></tr></thead><tbody>';
+      Object.keys(cont).sort().forEach(l => {
+        const t = turnoDoLider(l);
+        const destino = t ? `<b style="color:${t === 'AM' ? '#f59e0b' : '#818cf8'};">${t}</b>` : '<b style="color:#f87171;">⚠️ nenhum turno</b>';
+        const seguro = l.replace(/'/g, "\\'");
+        const botoes = l === '(EM BRANCO)' ? '' : `<button class="btn btn-outline-yellow btn-sm" onclick="usarLiderNoTurno('${seguro}', 'AM')">→ AM</button> <button class="btn btn-outline-purple btn-sm" onclick="usarLiderNoTurno('${seguro}', 'PM')">→ PM</button>`;
+        html += `<tr><td>${l}</td><td>${cont[l]}</td><td>${destino}</td><td style="white-space:nowrap;">${botoes}</td></tr>`;
+      });
+      html += '</tbody></table><span style="font-size: 9.5px; color: #64748b;">"Vai para" mostra a regra já salva. Clique em Salvar para aplicar mudanças.</span>';
+      box.innerHTML = html;
+    }
+
+    function usarLiderNoTurno(lider, turno) {
+      const input = document.getElementById(`liderInput${turno}`);
+      const outro = document.getElementById(`liderInput${turno === 'AM' ? 'PM' : 'AM'}`);
+      const alvo = normalizarNome(lider);
+      const lista = s => s.split(',').map(x => x.trim()).filter(Boolean);
+      // tira do outro turno, se estiver lá
+      outro.value = lista(outro.value).filter(n => normalizarNome(n) !== alvo).join(', ');
+      const atual = lista(input.value);
+      if (!atual.some(n => normalizarNome(n) === alvo)) atual.push(lider);
+      input.value = atual.join(', ');
+      document.querySelectorAll('input[name="modoLider"]').forEach(r => r.checked = (r.value === 'planilha'));
+      atualizarAjudaModoLider();
+    }
+
+    function salvarConfigLideres() {
+      if (window.perfilAtual !== 'admin') return;
+      const modo = (document.querySelector('input[name="modoLider"]:checked') || {}).value || 'planilha';
+      const lerNomes = t => document.getElementById(`liderInput${t}`).value
+        .split(',').map(n => normalizarNome(n)).filter(Boolean);
+      const novo = { modo, AM: lerNomes('AM'), PM: lerNomes('PM') };
+
+      if (modo === 'planilha') {
+        const repetidos = novo.AM.filter(n => novo.PM.includes(n));
+        if (repetidos.length) { alert(`O líder ${repetidos.join(', ')} está nos dois turnos. Deixe cada líder em um turno só.`); return; }
+        if (!novo.AM.length || !novo.PM.length) {
+          if (!confirm('Um dos turnos ficou sem líder. Ninguém será puxado automaticamente para ele. Continuar?')) return;
+        }
+      }
+
+      window.configLideres = novo;
+      atualizarRotulosLideres();
+      fecharModais();
+
+      let msg = 'Regra de líderes salva!';
+      if (modo === 'planilha' && window.planilhaEscala && window.planilhaEscala.pessoas) {
+        const add = aplicarDadosPlanilha(window.planilhaEscala); // já agenda o salvamento (local + nuvem)
+        msg += `\n${add} colaborador(es) novo(s) incluído(s) nas escalas AM/PM pela nova regra.`;
+      } else if (window.agendarAutoSave) {
+        window.agendarAutoSave();
+      }
+      alert(msg);
+    }
 
     // Atualiza as folgas automaticamente a cada 2 minutos (se houver link)
     const INTERVALO_ATUALIZACAO_MS = 2 * 60 * 1000;
@@ -886,7 +1078,7 @@
         const lider = normalizarNome(l[idxLider]);
         const codigos = {};
         colunasData.forEach(c => { codigos[c.iso] = normalizarNome(l[c.i]); });
-        pessoas[nome] = { lider, turno: MAPA_LIDER_TURNO[lider] || null, codigos };
+        pessoas[nome] = { lider, codigos };
       });
 
       const datas = colunasData.map(c => c.iso).sort();
@@ -898,14 +1090,15 @@
       window.planilhaEscala = dados;
 
       // Inclui automaticamente na escala certa (AM/PM) quem ainda não está cadastrado
+      // (só no modo automático; no modo manual a coluna Líder é ignorada)
       let adicionados = 0;
-      TURNOS.forEach(turno => {
+      if (window.configLideres.modo !== 'manual') TURNOS.forEach(turno => {
         if (!window.dadosTurnos[turno]) window.dadosTurnos[turno] = estadoVazio();
         const est = window.dadosTurnos[turno];
         garantirDias(est);
         const jaTem = new Set(est.colaboradores.map(normalizarNome));
         Object.keys(dados.pessoas).forEach(nome => {
-          if (dados.pessoas[nome].turno === turno && !jaTem.has(nome)) {
+          if (turnoDoLider(dados.pessoas[nome].lider) === turno && !jaTem.has(nome)) {
             est.colaboradores.push(nome);
             adicionados++;
           }
@@ -1088,6 +1281,7 @@
     window.iniciarSistema = function() {
       carregarEstadoTurno(window.turnoAtual);
       atualizarBotoesTurno();
+      atualizarRotulosLideres();
       document.getElementById('linkPlanilhaInput').value = window.linkPlanilha || '';
       atualizarStatusPlanilha();
       definirSemana(null); // abre na semana atual (já renderiza)
@@ -1113,7 +1307,7 @@
        - Cada computador guarda uma cópia local (IndexedDB) para abrir rápido
          e continuar funcionando se a internet cair.                      */
     const CAMINHO_NUVEM = 'escalaMarceloHelder';
-    const PARTES_NUVEM = ['turnos/AM', 'turnos/PM', 'planilha', 'linkPlanilha'];
+    const PARTES_NUVEM = ['turnos/AM', 'turnos/PM', 'planilha', 'linkPlanilha', 'configLideres'];
 
     const nuvem = {
       iniciada: false,
@@ -1168,7 +1362,8 @@
         'turnos/AM': JSON.stringify(window.dadosTurnos.AM || estadoVazio()),
         'turnos/PM': JSON.stringify(window.dadosTurnos.PM || estadoVazio()),
         'planilha': JSON.stringify(window.planilhaEscala || null),
-        'linkPlanilha': window.linkPlanilha || ''
+        'linkPlanilha': window.linkPlanilha || '',
+        'configLideres': JSON.stringify(window.configLideres)
       };
     }
 
@@ -1239,6 +1434,12 @@
             window.linkPlanilha = remoto;
             const inp = document.getElementById('linkPlanilhaInput');
             if (inp && document.activeElement !== inp) inp.value = remoto;
+          } else if (k === 'configLideres') {
+            const cfg = JSON.parse(remoto);
+            if (cfg && Array.isArray(cfg.AM) && Array.isArray(cfg.PM)) {
+              window.configLideres = cfg;
+              atualizarRotulosLideres();
+            }
           }
         } catch (e) {
           console.error('Dado inválido na nuvem em ' + k, e);
